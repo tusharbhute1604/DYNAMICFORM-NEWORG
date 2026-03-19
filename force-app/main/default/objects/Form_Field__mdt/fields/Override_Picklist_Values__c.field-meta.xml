@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Override_Picklist_Values__c</fullName>
+    <description>Comma-separated values (e.g., Value1,Value2,Value3)</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Override Picklist Values</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

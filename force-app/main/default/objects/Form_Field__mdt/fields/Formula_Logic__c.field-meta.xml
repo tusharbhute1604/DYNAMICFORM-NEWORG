@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Formula_Logic__c</fullName>
+    <description>Simple JS math. Use field API names in curly braces. Example: ({Quantity__c} * {Rate__c}) + 10</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Formula Logic</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

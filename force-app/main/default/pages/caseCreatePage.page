@@ -1,0 +1,136 @@
+<apex:page standardController="Case">
+    <apex:includeLightning />
+    
+    <apex:includeScript value="/support/console/60.0/integration.js"/>
+
+    <div id="lwcContainer" class="slds-theme_default slds-box" style="min-height: 80vh; background: white;"></div>
+
+    <script>
+        // Grab URL parameters
+        var accId = '{!$CurrentPage.parameters.def_account_id}'; 
+        var recTypeId = '{!$CurrentPage.parameters.RecordType}'; 
+
+        // =========================================================
+        // CONFIGURATION: CUSTOM LABEL FOR RECORD TYPE ID
+        // =========================================================
+        // This pulls the ID from a Custom Label named "Maintenance_Request_Record_Type_ID"
+        var targetRecordTypeIds = [
+            '{!$Label.Maintenance_Request_Record_Type_ID}' 
+        ];
+        
+        // Safely check if the current Record Type matches our targets
+        var useCustomForm = false;
+        if (recTypeId) {
+            for (var i = 0; i < targetRecordTypeIds.length; i++) {
+                // Check if label has a value and compare 15-char IDs
+                if (targetRecordTypeIds[i] && recTypeId.substring(0, 15) === targetRecordTypeIds[i].substring(0, 15)) {
+                    useCustomForm = true;
+                    break;
+                }
+            }
+        }
+
+        if (useCustomForm) {
+            // ==========================================
+            // MATCH: Render the Custom LWC Form
+            // ==========================================
+            $Lightning.use("c:DynamicFormApp", function() {
+                $Lightning.createComponent(
+                    "c:caseCreateWrapper",
+                    {
+                        recordId: accId,
+                        recordTypeId: recTypeId,
+                        isLightningOut: true // <--- FLAG: Tells the form we are in Visualforce
+                    },
+                    "lwcContainer",
+                    function(cmp) {
+                        
+                        // *** FIX: Attach listeners to the Container DIV ***
+                        // This guarantees we catch bubbling events even if LWC shadow DOM isn't fully ready
+                        var container = document.getElementById("lwcContainer");
+
+                        // 1. LISTEN FOR ERRORS/SUCCESS (TOAST BRIDGE)
+                        container.addEventListener('notification', function(e) {
+                            var toastData = e.detail;
+                            if (sforce && sforce.one) {
+                                sforce.one.showToast({
+                                    "title": toastData.title,
+                                    "message": toastData.message,
+                                    "type": toastData.variant
+                                });
+                            } else {
+                                console.warn('sforce.one not available for toast:', toastData.message);
+                            }
+                        });
+
+                        // 2. LISTEN FOR CLOSE (NAVIGATION)
+                        container.addEventListener('close', function(e) {
+                            var newRecordId = e.detail.recordId;
+
+                            // CONSOLE APP NAVIGATION
+                            if (sforce && sforce.console && sforce.console.isInConsole()) {
+                                if (newRecordId) {
+                                    // Open new record
+                                    sforce.console.openPrimaryTab(null, '/' + newRecordId, true, 'Case', function(result) {
+                                        // Close the "New Case" tab
+                                        sforce.console.getEnclosingTabId(function(enclosingResult) {
+                                            sforce.console.closeTab(enclosingResult.id);
+                                        });
+                                    });
+                                } else {
+                                    // Cancel clicked - just close tab
+                                    sforce.console.getEnclosingTabId(function(enclosingResult) {
+                                        sforce.console.closeTab(enclosingResult.id);
+                                    });
+                                }
+                            } 
+                            // STANDARD APP NAVIGATION
+                            else {
+                                if (newRecordId) {
+                                    if ((typeof sforce != 'undefined') && sforce && (!!sforce.one)) {
+                                        sforce.one.navigateToSObject(newRecordId, "view");
+                                    } else {
+                                        window.location.href = '/' + newRecordId;
+                                    }
+                                } else {
+                                    // Cancel logic
+                                    if ((typeof sforce != 'undefined') && sforce && (!!sforce.one)) {
+                                        sforce.one.back(true);
+                                    } else {
+                                        window.history.back();
+                                    }
+                                }
+                            }
+                        });
+                    }
+                );
+            });
+        } else {
+            // ==========================================
+            // NO MATCH: Redirect to Standard Case Page
+            // ==========================================
+            // Hide the empty white box so it doesn't flash
+            document.getElementById('lwcContainer').style.display = 'none';
+
+            // Build standard Lightning Create URL with "nooverride=1" to bypass this VF page
+            var standardUrl = '/lightning/o/Case/new?nooverride=1';
+            if (recTypeId) {
+                standardUrl += '&recordTypeId=' + recTypeId;
+            }
+            if (accId) {
+                standardUrl += '&defaultFieldValues=AccountId=' + accId;
+            }
+
+            if ((typeof sforce != 'undefined') && sforce && (!!sforce.one)) {
+                // Navigate in Lightning / Console
+                sforce.one.navigateToURL(standardUrl, true);
+            } else {
+                // Fallback for Salesforce Classic
+                var classicUrl = '/500/e?nooverride=1';
+                if (recTypeId) classicUrl += '&RecordType=' + recTypeId;
+                if (accId) classicUrl += '&def_account_id=' + accId;
+                window.location.replace(classicUrl);
+            }
+        }
+    </script>
+</apex:page>

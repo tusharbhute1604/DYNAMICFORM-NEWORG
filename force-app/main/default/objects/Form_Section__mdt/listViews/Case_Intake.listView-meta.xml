@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Case_Intake</fullName>
+    <columns>MasterLabel</columns>
+    <columns>DeveloperName</columns>
+    <columns>Allow_Multiple_Rows__c</columns>
+    <columns>Form_Config__c</columns>
+    <columns>Number_of_Columns__c</columns>
+    <columns>Object_API_Name__c</columns>
+    <columns>Order__c</columns>
+    <columns>Parent_Section_DeveloperName__c</columns>
+    <columns>Relationship_Parent_Field__c</columns>
+    <columns>Render_As__c</columns>
+    <columns>Show_On__c</columns>
+    <columns>Visibility_Logic__c</columns>
+    <filterScope>Everything</filterScope>
+    <filters>
+        <field>Form_Config__c</field>
+        <operation>equals</operation>
+        <value>Case_Intake</value>
+    </filters>
+    <label>Case Intake</label>
+</ListView>

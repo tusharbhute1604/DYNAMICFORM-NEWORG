@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Save_Without_Sharing__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>Check this box if records created by this form might have their ownership changed immediately (e.g., via Case Assignment Rules), to prevent cross-reference DML errors.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>Check this box if records created by this form might have their ownership changed immediately (e.g., via Case Assignment Rules), to prevent cross-reference DML errors.</inlineHelpText>
+    <label>Save Without Sharing</label>
+    <type>Checkbox</type>
+</CustomField>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Required_Logic__c</fullName>
+    <description>JSON condition to make a field on the form conditionally required</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Required Logic</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>4</visibleLines>
+</CustomField>

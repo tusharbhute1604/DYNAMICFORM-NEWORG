@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Is_Required__c</fullName>
+    <defaultValue>false</defaultValue>
+    <description>If this section is a Matrix, checking this box will require the user to populate at least one cell in the matrix before saving or proceeding.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>If this section is a Matrix, checking this box will require the user to populate at least one cell in the matrix before saving or proceeding.</inlineHelpText>
+    <label>Is Required</label>
+    <type>Checkbox</type>
+</CustomField>

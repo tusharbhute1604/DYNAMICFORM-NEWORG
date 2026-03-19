@@ -1,0 +1,15 @@
+<aura:component implements="force:appHostable,flexipage:availableForAllPageTypes">
+    <lightning:workspaceAPI aura:id="workspace"/>
+    
+    <aura:attribute name="recordId" type="String" />
+    <aura:attribute name="recordTypeId" type="String" />
+    
+    <aura:handler name="init" value="{!this}" action="{!c.doInit}"/>
+    
+    <div class="slds-theme_default slds-box" style="background: transparent; border: none;">
+        <c:caseCreateWrapper 
+            recordId="{!v.recordId}" 
+            recordTypeId="{!v.recordTypeId}" 
+            onclose="{!c.handleClose}" />
+    </div>
+</aura:component>

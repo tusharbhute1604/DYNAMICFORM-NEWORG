@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Form_Instructions__c</fullName>
+    <description>Add static messages and instructions to this field. It will appear at the top of the form. Supports HTML tags</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Form Instructions</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>

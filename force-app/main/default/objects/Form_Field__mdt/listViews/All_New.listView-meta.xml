@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ListView xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>All_New</fullName>
+    <columns>MasterLabel</columns>
+    <columns>Controller_Field__c</columns>
+    <columns>Field_API_Name__c</columns>
+    <columns>Field_Type__c</columns>
+    <columns>Form_Section__c</columns>
+    <columns>Order__c</columns>
+    <columns>Required__c</columns>
+    <columns>Visibility_Logic__c</columns>
+    <columns>Lookup_Search_Field__c</columns>
+    <columns>Lookup_Target_Object__c</columns>
+    <columns>Override_Dependency_JSON__c</columns>
+    <columns>Override_Picklist_Values__c</columns>
+    <columns>Relationship_Parent_Field__c</columns>
+    <columns>Prepopulate__c</columns>
+    <columns>Read_Only__c</columns>
+    <filterScope>Everything</filterScope>
+    <label>All</label>
+</ListView>

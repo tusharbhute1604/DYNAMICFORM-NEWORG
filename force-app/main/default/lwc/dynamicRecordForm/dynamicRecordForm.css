@@ -1,0 +1,33 @@
+/* dynamicRecordForm.css */
+
+/* 1. Ensure the scroll container takes available space but allows overflow */
+.slds-scrollable_x {
+    width: 100%;
+    overflow-x: auto;
+}
+
+/* 2. Force a minimum width on the text/number inputs so they don't collapse */
+/* This forces the browser to expand the table width */
+.slds-table input.slds-input {
+    min-width: 80px; 
+}
+
+/* 3. Give the first column (Row Labels) enough fixed space */
+.slds-table th:first-child,
+.slds-table td[data-label="Type"] {
+    min-width: 200px;
+    max-width: 300px; 
+    white-space: normal; /* Allow text wrapping for long row labels */
+}
+
+/* 4. Ensure header cells align with input cells */
+.slds-table th {
+    white-space: normal;
+    vertical-align: bottom;
+}
+
+/* 5. Fix for Checkbox Alignment in Tables */
+.slds-checkbox {
+    display: flex;
+    justify-content: center;
+}

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Button_Config_JSON__c</fullName>
+    <description>JSON object to override button labels. Keys: cancel, next, previous, submit, save, finish, saveAndUpload, saveAndFinish, saveAndAttach.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <label>Button Config JSON</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>3</visibleLines>
+</CustomField>
