@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>HTML_Content__c</fullName>
+    <description>Used to display custom, read-only messages to the user on the form. Only applicable for the &quot;Display Text&quot; Field Type. The content entered here will be rendered natively in the LWC using the lightning-formatted-rich-text component.</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>Enter the exact text or HTML you want to display on the form (e.g., use &lt;b&gt; for bold, &lt;br&gt; for line breaks, or &lt;a&gt; for links). Note: This field is only rendered if the Field Type is &quot;Display Text&quot;.</inlineHelpText>
+    <label>HTML Content</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

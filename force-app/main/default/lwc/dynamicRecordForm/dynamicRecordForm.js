@@ -20,9 +20,15 @@ function generateUuid() {
 
 export default class DynamicForm extends NavigationMixin(LightningElement) {
     @api formDeveloperName;
-    @api recordTypeId; 
     @api formMode = 'auto';
     @api isLightningOut = false; 
+
+    _recordTypeId = '';
+    @api 
+    get recordTypeId() { return this._recordTypeId; }
+    set recordTypeId(value) {
+        this._recordTypeId = value ? value : '';
+    }
 
     _recordId;
     @api 
@@ -62,6 +68,9 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     _serverData = {};
     _cachedMetadata;
     _lastLoadKey = ''; 
+
+    _activeLookup = null;
+    _activeSearchTerms = {};
 
     @track labels = {
         cancel: 'Cancel', next: 'Next', previous: 'Previous', finish: 'Finish',
@@ -123,7 +132,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         return null; 
     }
 
-    @wire(getFormMetadata, { formDeveloperName: '$formDeveloperName' })
+    @wire(getFormMetadata, { formDeveloperName: '$formDeveloperName', recordTypeId: '$_recordTypeId' })
     wiredMetadata({ error, data }) {
         if (data) {
             this._cachedMetadata = data;
@@ -519,18 +528,47 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     }
 
     applyMatrixRules() {
+        let forceRepaint = false;
         for (let sec of this.sections) {
             if (!sec.isMatrix || !sec.matrixRows) continue;
             for (let row of sec.matrixRows) {
                 for (let cell of row.cells) {
+                    let shouldBeReadOnly = cell.isReadOnly;
+                    
                     if (cell.readonlyLogic) {
-                        const shouldBeReadOnly = Boolean(this.checkLogic(cell.readonlyLogic, null, true));
-                        if (cell.isReadOnly !== shouldBeReadOnly) cell.isReadOnly = shouldBeReadOnly;
+                        shouldBeReadOnly = Boolean(this.checkLogic(cell.readonlyLogic, null, true));
                     } else if (cell.staticReadOnly === true) {
-                        if (!cell.isReadOnly) cell.isReadOnly = true;
+                        shouldBeReadOnly = true;
+                    }
+
+                    if (cell.isReadOnly !== shouldBeReadOnly) {
+                        cell.isReadOnly = shouldBeReadOnly;
+                        forceRepaint = true;
+                    }
+
+                    // *** FIX: Stale Data Scrubbing ***
+                    // If logic determines the cell is disabled, forcefully wipe its value.
+                    // This guarantees `handleSubmit` will trigger a database deletion for any orphaned data.
+                    if (shouldBeReadOnly) {
+                        const emptyVal = cell.isCheckbox ? 'false' : '';
+                        const emptyDisplay = cell.isCheckbox ? false : '';
+                        
+                        if (cell.value !== emptyVal) {
+                            cell.value = emptyVal;
+                            cell.displayValue = emptyDisplay;
+                            
+                            if (!this.matrixState) this.matrixState = {};
+                            this.matrixState[`MATRIX__${sec.developerName}__${cell.rowKey}__${cell.colKey}`] = emptyDisplay;
+                            forceRepaint = true;
+                        }
                     }
                 }
             }
+        }
+        
+        // Force the LWC array to re-render if memory states were wiped
+        if (forceRepaint) {
+            this.sections = [...this.sections];
         }
     }
 
@@ -539,7 +577,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         if (fullDataBundle && fullDataBundle.children && fullDataBundle.children[matrixObjectName]) {
             existingEntries = fullDataBundle.children[matrixObjectName];
         }
+        
+        const safeColumns = config.columns.map(c => {
+            return { ...c, safeColKey: String(c.key).replace(/[^a-zA-Z0-9]/g, '_') };
+        });
+
         const rows = config.rows.map(r => {
+            let safeRowKey = String(r.key).replace(/[^a-zA-Z0-9]/g, '_');
+
             const processedCells = config.columns.map(col => {
                 const rowKey = r.key;
                 const colKey = col.key;
@@ -569,17 +614,24 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 if (!this.matrixState) this.matrixState = {};
                 this.matrixState[`MATRIX__${sectionDevName}__${rowKey}__${colKey}`] = isCheckbox ? displayVal : val;
 
+                let stepVal = (cellType === 'number') ? 'any' : null;
+                
+                let safeDomId = `matrix_${safeRowKey}_${String(colKey).replace(/[^a-zA-Z0-9]/g, '_')}`;
+
                 return {
-                    key: `${rowKey}__${colKey}`, rowKey: rowKey, colKey: colKey,
+                    key: `${rowKey}__${colKey}`, 
+                    domId: safeDomId, 
+                    rowKey: rowKey, colKey: colKey, 
                     value: val, displayValue: displayVal, recordId: recId,
                     isReadOnly: Boolean(isReadOnly), staticReadOnly: Boolean(staticReadOnly), readonlyLogic: readonlyLogic,
                     isCheckbox: Boolean(isCheckbox), isStandard: !Boolean(isCheckbox),
+                    step: stepVal,
                     inputType: isCheckbox ? 'checkbox' : (cellType === 'number' ? 'number' : 'text')
                 };
             });
-            return { key: r.key, label: r.label, cells: processedCells };
+            return { key: r.key, safeRowKey: safeRowKey, label: r.label, cells: processedCells };
         });
-        return { columns: config.columns, rows: rows };
+        return { columns: safeColumns, rows: rows };
     }
 
     handleMatrixChange(event) {
@@ -725,6 +777,9 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 finalValue = isMultiSelect ? [] : (isCheckbox ? false : '');
             }
 
+            let mappedUiType = String(this.mapType(f.type));
+            let stepVal = (mappedUiType === 'number') ? 'any' : null;
+
             return {
                 ...f, 
                 isStaticRequired: isStaticRequired, 
@@ -747,7 +802,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 
                 isStandard: Boolean(!isHeader && !isDisplayText && !isLookup && !isPicklist && !isMultiSelect && !isLongTextAreaType && !isFileUploadType && !isCheckbox),
                 
-                uiType: String(this.mapType(f.type)), 
+                uiType: mappedUiType, 
+                step: stepVal,
                 currentValue: finalValue, 
                 currentDetails: currentDetails ? String(currentDetails) : '', 
                 isVisible: true, 
@@ -1208,6 +1264,12 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
+    handleFocus(event) {
+        const fieldApi = event.currentTarget.dataset.api;
+        const rowId = event.currentTarget.dataset.row;
+        this._activeLookup = `${rowId}-${fieldApi}`;
+    }
+
     handleLookupSearch(event) {
         const fieldApi = event.currentTarget.dataset.api;
         const rowId = event.currentTarget.dataset.row;
@@ -1242,7 +1304,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
 
         if (searchTerm.length >= 2) {
+            if (!this._activeSearchTerms) this._activeSearchTerms = {};
+            this._activeSearchTerms[`${rowId}-${fieldApi}`] = searchTerm;
+
             searchRecords({ searchTerm, objectApiName: field.lookupTargetObject, searchFields: field.lookupSearchField }).then(res => {
+                
+                if (this._activeLookup !== `${rowId}-${fieldApi}`) return;
+                if (this._activeSearchTerms[`${rowId}-${fieldApi}`] !== searchTerm) return;
+
                 const isOpen = res && res.length > 0;
                 let safeOptions = [];
                 if (res) {
@@ -1279,6 +1348,9 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     handleBlur(event) {
         const fieldApi = event.currentTarget.dataset.api;
         const rowId = event.currentTarget.dataset.row;
+        
+        this._activeLookup = null;
+
         setTimeout(() => { 
             const hasValidId = this.sectionData[rowId] && this.sectionData[rowId][fieldApi];
             const field = this.findField(fieldApi, rowId);
@@ -1853,7 +1925,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             parentObjectApiName: this._formTargetObject, 
             payload: payload, 
             relationshipMap: relationshipMap, 
-            // *** FIX: SCRUB DUPLICATE IDs BEFORE PASSING TO APEX ***
             recordsToDelete: Array.from(new Set(this._recordsToDelete)),
             saveWithoutSharing: this.saveWithoutSharing 
         })
@@ -1922,7 +1993,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                 parentObjectApiName: targetObj, 
                                 payload: batchPayload, 
                                 relationshipMap: batchRelMap, 
-                                // *** FIX: SCRUB DUPLICATE BATCH IDs BEFORE PASSING TO APEX ***
                                 recordsToDelete: Array.from(new Set(batchRecordsToDelete)),
                                 saveWithoutSharing: this.saveWithoutSharing
                             })

@@ -64,6 +64,11 @@
                 <default>false</default>
                 <label>Header</label>
             </value>
+            <value>
+                <fullName>Display Text</fullName>
+                <default>false</default>
+                <label>Display Text</label>
+            </value>
         </valueSetDefinition>
     </valueSet>
 </CustomField>

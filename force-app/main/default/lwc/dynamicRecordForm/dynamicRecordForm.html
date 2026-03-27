@@ -66,7 +66,7 @@
                                                                 </div>
                                                             </template>
                                                             <template if:true={cell.isStandard}>
-                                                                <input type={cell.inputType} class="slds-input" value={cell.value} data-section={sec.id} data-row={row.key} data-col={cell.colKey} disabled={cell.isReadOnly} onblur={handleMatrixChange} />
+                                                                <input type={cell.inputType} step={cell.step} class="slds-input" value={cell.value} data-section={sec.id} data-row={row.key} data-col={cell.colKey} disabled={cell.isReadOnly} onblur={handleMatrixChange} />
                                                             </template>
                                                         </td>
                                                     </template>
@@ -115,7 +115,7 @@
                                                     </template>
 
                                                     <template if:true={field.isStandard}>
-                                                        <lightning-input type={field.uiType} label={field.label} data-api={field.apiName} data-row={row.id} data-secid={sec.id} required={field.required} value={field.currentValue} disabled={field.isReadOnly} onchange={handleFieldChange} class="slds-m-bottom_xx-small"></lightning-input>
+                                                        <lightning-input type={field.uiType} step={field.step} label={field.label} data-api={field.apiName} data-row={row.id} data-secid={sec.id} required={field.required} value={field.currentValue} disabled={field.isReadOnly} onchange={handleFieldChange} class="slds-m-bottom_xx-small"></lightning-input>
                                                         <template if:true={field.helpText}><div class="slds-form-element__help slds-m-bottom_small" style="margin-top: -0.5rem; font-size: 0.7rem;">{field.helpText}</div></template>
                                                     </template>
                 
@@ -142,7 +142,7 @@
                                                                 <div class="slds-combobox_container">
                                                                     <div class={field.lookupClass}>
                                                                         <div class="slds-combobox__form-element" role="none">
-                                                                            <lightning-input type="search" data-api={field.apiName} data-row={row.id} data-secid={sec.id} value={field.currentValue} required={field.required} disabled={field.isReadOnly} onchange={handleLookupSearch} onblur={handleBlur} placeholder="Search..." variant="label-hidden"></lightning-input>
+                                                                            <lightning-input type="search" data-api={field.apiName} data-row={row.id} data-secid={sec.id} value={field.currentValue} required={field.required} disabled={field.isReadOnly} onchange={handleLookupSearch} onblur={handleBlur} onfocus={handleFocus} placeholder="Search..." variant="label-hidden"></lightning-input>
                                                                         </div>
                                                                         <div class="slds-dropdown slds-dropdown_length-with-icon-7 slds-dropdown_fluid" role="listbox">
                                                                             <ul class="slds-listbox slds-listbox_vertical" role="presentation">

@@ -39,7 +39,7 @@ public with sharing class DynamicFormController {
         @AuraEnabled public String label;
         @AuraEnabled public String apiName;
         @AuraEnabled public String type;
-        @AuraEnabled public String htmlContent; // *** NEW PROPERTY FOR DISPLAY TEXT ***
+        @AuraEnabled public String htmlContent;
         @AuraEnabled public Boolean required;
         @AuraEnabled public String requiredLogic; 
         @AuraEnabled public String visibilityLogic;
@@ -71,7 +71,7 @@ public with sharing class DynamicFormController {
     }
 
     @AuraEnabled(cacheable=true)
-    public static FormWrapper getFormMetadata(String formDeveloperName) {
+    public static FormWrapper getFormMetadata(String formDeveloperName, String recordTypeId) {
         FormWrapper form = new FormWrapper();
         try {
             Form_Config__mdt config = [
@@ -108,7 +108,6 @@ public with sharing class DynamicFormController {
                 ORDER BY Order__c ASC
             ];
             
-            // *** ADDED HTML_Content__c TO QUERY ***
             List<Form_Field__mdt> allFields = [
                 SELECT Id, Label, Field_API_Name__c, Field_Type__c, Required__c, Order__c, 
                        Visibility_Logic__c, Required_Logic__c, Controller_Field__c, Controlling_Lookup__c, Form_Section__c, 
@@ -162,7 +161,7 @@ public with sharing class DynamicFormController {
                         fw.helpText = f.Help_Text__c; 
                         fw.defaultValue = f.Default_Value__c;
                         fw.formulaLogic = f.Formula_Logic__c;
-                        fw.htmlContent = f.HTML_Content__c; // *** MAPPED HTML CONTENT ***
+                        fw.htmlContent = f.HTML_Content__c; 
                         fw.saveToDb = (f.Save_To_Database__c != false); 
                         fw.type = f.Field_Type__c;
                         fw.required = f.Required__c;
@@ -200,7 +199,6 @@ public with sharing class DynamicFormController {
                             fw.saveToDb = false; 
                         }
                         
-                        // *** DISPLAY TEXT SAFEGUARD ***
                         String typeLower = (f.Field_Type__c != null) ? f.Field_Type__c.toLowerCase() : '';
                         if (typeLower == 'display text' || typeLower == 'rich text') {
                             fw.excludeFromDb = true;
@@ -226,7 +224,7 @@ public with sharing class DynamicFormController {
                                 }
                             }
                             if (targetMap != null) {
-                                processPicklistLogic(f, fw, targetMap);
+                                processPicklistLogic(f, fw, targetMap, recordTypeId, config.Object_API_Name__c);
                             }
                         }
                         else if (fw.excludeFromDb && (typeLower.contains('picklist') || typeLower.contains('multi'))) {
@@ -341,9 +339,15 @@ public with sharing class DynamicFormController {
             return result;
         }
         try {
-            Id recId = (Id)sourceRecordId;
-            String objName = recId.getSObjectType().getDescribe().getName();
-            Map<String, SObjectField> rawFieldMap = recId.getSObjectType().getDescribe().fields.getMap();
+            String cleanId = sourceRecordId.replaceAll('[^a-zA-Z0-9]', '');
+            if (cleanId.length() < 15) return result;
+            Id recId = (Id)cleanId;
+            
+            Schema.SObjectType sType = recId.getSObjectType();
+            if (sType == null) return result;
+            
+            String objName = sType.getDescribe().getName();
+            Map<String, SObjectField> rawFieldMap = sType.getDescribe().fields.getMap();
             Map<String, SObjectField> lowerFieldMap = new Map<String, SObjectField>();
             for(String key : rawFieldMap.keySet()) {
                 lowerFieldMap.put(key.toLowerCase(), rawFieldMap.get(key));
@@ -521,17 +525,24 @@ public with sharing class DynamicFormController {
             }
 
             if (recordsToDelete != null && !recordsToDelete.isEmpty()) {
-                List<Id> idsToDelete = new List<Id>();
+                List<SObject> objsToDelete = new List<SObject>();
                 for (String rid : recordsToDelete) { 
                     if (String.isNotBlank(rid)) {
-                        idsToDelete.add((Id)rid); 
+                        String cleanId = rid.replaceAll('[^a-zA-Z0-9]', '');
+                        if (cleanId.length() >= 15) {
+                            Id recId = (Id)cleanId;
+                            Schema.SObjectType sType = recId.getSObjectType();
+                            if (sType != null) {
+                                objsToDelete.add(sType.newSObject(recId)); 
+                            }
+                        }
                     }
                 }
-                if (!idsToDelete.isEmpty()) {
+                if (!objsToDelete.isEmpty()) {
                     if (saveWithoutSharing != null && saveWithoutSharing) {
-                        sysDml.doDelete(idsToDelete);
+                        sysDml.doDelete(objsToDelete);
                     } else {
-                        Database.delete(idsToDelete);
+                        Database.delete(objsToDelete);
                     }
                 }
             }
@@ -560,10 +571,10 @@ public with sharing class DynamicFormController {
                 throw new AuraHandledException('Invalid Parent Object');
             }
             
-            if (parentData.containsKey('Id')) {
-                parentRec.Id = (Id)parentData.get('Id'); 
-            } else if (parentData.containsKey('id')) {
-                parentRec.Id = (Id)parentData.get('id'); 
+            if (parentData.containsKey('Id') && parentData.get('Id') != null) {
+                parentRec.Id = (Id)String.valueOf(parentData.get('Id')).replaceAll('[^a-zA-Z0-9]', ''); 
+            } else if (parentData.containsKey('id') && parentData.get('id') != null) {
+                parentRec.Id = (Id)String.valueOf(parentData.get('id')).replaceAll('[^a-zA-Z0-9]', ''); 
             }
 
             if (saveWithoutSharing != null && saveWithoutSharing) {
@@ -598,11 +609,11 @@ public with sharing class DynamicFormController {
                         SObject childRec = createSObject(objName, itemMap);
                         if (childRec != null) {
                             Boolean isUpdate = false;
-                            if (itemMap.containsKey('Id')) { 
-                                childRec.Id = (Id)itemMap.get('Id'); 
+                            if (itemMap.containsKey('Id') && itemMap.get('Id') != null) { 
+                                childRec.Id = (Id)String.valueOf(itemMap.get('Id')).replaceAll('[^a-zA-Z0-9]', ''); 
                                 isUpdate = true; 
-                            } else if (itemMap.containsKey('id')) { 
-                                childRec.Id = (Id)itemMap.get('id'); 
+                            } else if (itemMap.containsKey('id') && itemMap.get('id') != null) { 
+                                childRec.Id = (Id)String.valueOf(itemMap.get('id')).replaceAll('[^a-zA-Z0-9]', ''); 
                                 isUpdate = true; 
                             }
                             if (!isUpdate && childRec.get(lookupField) == null) {
@@ -624,11 +635,11 @@ public with sharing class DynamicFormController {
                     SObject childRec = createSObject(objName, itemMap);
                     if (childRec != null) {
                         Boolean isUpdate = false;
-                        if (itemMap.containsKey('Id')) { 
-                            childRec.Id = (Id)itemMap.get('Id'); 
+                        if (itemMap.containsKey('Id') && itemMap.get('Id') != null) { 
+                            childRec.Id = (Id)String.valueOf(itemMap.get('Id')).replaceAll('[^a-zA-Z0-9]', ''); 
                             isUpdate = true; 
-                        } else if (itemMap.containsKey('id')) { 
-                            childRec.Id = (Id)itemMap.get('id'); 
+                        } else if (itemMap.containsKey('id') && itemMap.get('id') != null) { 
+                            childRec.Id = (Id)String.valueOf(itemMap.get('id')).replaceAll('[^a-zA-Z0-9]', ''); 
                             isUpdate = true; 
                         }
                         if (!isUpdate && childRec.get(lookupField) == null) {
@@ -660,8 +671,14 @@ public with sharing class DynamicFormController {
             return;
         }
         try { 
-            Id recId = (Id)recordId; 
-            Database.delete(recId); 
+            String cleanId = recordId.replaceAll('[^a-zA-Z0-9]', '');
+            if (cleanId.length() >= 15) {
+                Id recId = (Id)cleanId; 
+                Schema.SObjectType sType = recId.getSObjectType();
+                if (sType != null) {
+                    Database.delete(sType.newSObject(recId)); 
+                }
+            }
         } catch (Exception e) { 
             throw new AuraHandledException(getCleanErrorMessage(e)); 
         }
@@ -714,7 +731,7 @@ public with sharing class DynamicFormController {
     }
 
 
-    private static void processPicklistLogic(Form_Field__mdt f, FieldWrapper fw, Map<String, SObjectField> describeMap) {
+    private static void processPicklistLogic(Form_Field__mdt f, FieldWrapper fw, Map<String, SObjectField> describeMap, String recordTypeId, String rootObjectApiName) {
         if (String.isNotBlank(f.Override_Picklist_Values__c)) { 
             for (String val : f.Override_Picklist_Values__c.split(',')) { 
                 fw.picklistOptions.add(new Map<String, String>{'label'=>val.trim(), 'value'=>val.trim()}); 
@@ -734,13 +751,64 @@ public with sharing class DynamicFormController {
         if (fw.picklistOptions.isEmpty() && describeMap.containsKey(f.Field_API_Name__c.toLowerCase())) {
             SObjectField fieldToken = describeMap.get(f.Field_API_Name__c.toLowerCase());
             Schema.DescribeFieldResult dfr = fieldToken.getDescribe();
-            for (Schema.PicklistEntry entry : dfr.getPicklistValues()) { 
-                if (entry.isActive()) {
-                    fw.picklistOptions.add(new Map<String, String>{'label' => entry.getLabel(), 'value' => entry.getValue()}); 
+            
+            Boolean fetchSuccess = false;
+            Set<String> allowedValues = new Set<String>();
+
+            if (String.isNotBlank(recordTypeId) && String.isNotBlank(fw.targetObject) && fw.targetObject.equalsIgnoreCase(rootObjectApiName)) {
+                try {
+                    if(!Test.isRunningTest()) {
+                        // *** FIX: Corrected Class Type and Method Signature ***
+                        ConnectApi.PicklistValuesCollection rtValues = ConnectApi.RecordUi.getPicklistValuesByRecordType(fw.targetObject, recordTypeId);
+                        
+                        if (rtValues != null && rtValues.picklistFieldValues != null) {
+                            ConnectApi.PicklistValues fieldValues = null;
+                            
+                            for (String fieldKey : rtValues.picklistFieldValues.keySet()) {
+                                if (fieldKey.equalsIgnoreCase(fw.apiName)) {
+                                    fieldValues = rtValues.picklistFieldValues.get(fieldKey);
+                                    break;
+                                }
+                            }
+                            
+                            if (fieldValues != null && fieldValues.values != null) {
+                                for (ConnectApi.PicklistValue pv : fieldValues.values) {
+                                    fw.picklistOptions.add(new Map<String, String>{'label' => pv.label, 'value' => pv.value});
+                                    allowedValues.add(pv.value); 
+                                }
+                                fetchSuccess = true;
+                            }
+                        }
+                    }
+                } catch (Exception e) {
+                    System.debug('RecordType Picklist Fetch Failed. Falling back to Schema: ' + e.getMessage());
+                    fetchSuccess = false;
                 }
             }
+
+            if (!fetchSuccess) {
+                for (Schema.PicklistEntry entry : dfr.getPicklistValues()) { 
+                    if (entry.isActive()) {
+                        fw.picklistOptions.add(new Map<String, String>{'label' => entry.getLabel(), 'value' => entry.getValue()}); 
+                        allowedValues.add(entry.getValue());
+                    }
+                }
+            }
+            
             if (String.isNotBlank(f.Controller_Field__c)) {
                 fw.dependencyMap = PicklistDependencyHelper.getSerializedDependencyMap(fieldToken);
+                
+                if (fetchSuccess && !allowedValues.isEmpty()) {
+                    for (String ctrlVal : fw.dependencyMap.keySet()) {
+                        List<Map<String, String>> filteredDeps = new List<Map<String, String>>();
+                        for (Map<String, String> depOpt : fw.dependencyMap.get(ctrlVal)) {
+                            if (allowedValues.contains(depOpt.get('value'))) {
+                                filteredDeps.add(depOpt);
+                            }
+                        }
+                        fw.dependencyMap.put(ctrlVal, filteredDeps);
+                    }
+                }
             }
         }
     }
@@ -800,13 +868,13 @@ public with sharing class DynamicFormController {
                 Object val = data.get(key);
                 
                 if (f.getDescribe().isCreateable() || f.getDescribe().isUpdateable()) {
-                    if (val == null || String.valueOf(val) == '') {
+                    if (val == null || String.valueOf(val).trim() == '') {
                         if (f.getDescribe().isNillable()) {
                             obj.put(f, null); 
                         }
                     } else {
                         DisplayType t = f.getDescribe().getType();
-                        String valString = String.valueOf(val);
+                        String valString = String.valueOf(val).trim();
                         if (t == DisplayType.DOUBLE || t == DisplayType.CURRENCY || t == DisplayType.PERCENT) {
                             obj.put(f, Double.valueOf(valString));
                         } else if (t == DisplayType.INTEGER) {
@@ -822,7 +890,10 @@ public with sharing class DynamicFormController {
                         } else if (t == DisplayType.BOOLEAN) {
                             obj.put(f, Boolean.valueOf(valString));
                         } else if (t == DisplayType.REFERENCE || t == DisplayType.ID) {
-                            obj.put(f, (Id)valString);
+                            String cleanId = valString.replaceAll('[^a-zA-Z0-9]', '');
+                            if (cleanId.length() >= 15) {
+                                obj.put(f, (Id)cleanId);
+                            }
                         } else if (t == DisplayType.TEXTAREA) {
                             obj.put(f, valString);
                         } else {
@@ -842,8 +913,8 @@ public with sharing class DynamicFormController {
         public void doUpsert(List<SObject> records) {
             upsert records;
         }
-        public void doDelete(List<Id> recordIds) {
-            Database.delete(recordIds);
+        public void doDelete(List<SObject> records) {
+            Database.delete(records);
         }
     }
 }
