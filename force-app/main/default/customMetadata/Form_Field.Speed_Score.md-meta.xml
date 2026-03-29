@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-    <label>Appointment Time</label>
+    <label>Speed Score</label>
     <protected>false</protected>
     <values>
         <field>Controller_Field__c</field>
@@ -15,23 +15,31 @@
         <value xsi:nil="true"/>
     </values>
     <values>
+        <field>Dynamic_SOQL__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
         <field>Fetch_On_Edit__c</field>
         <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
         <field>Field_API_Name__c</field>
-        <value xsi:type="xsd:string">Appointment_Time__c</value>
+        <value xsi:type="xsd:string">Speed_Score</value>
     </values>
     <values>
         <field>Field_Type__c</field>
-        <value xsi:type="xsd:string">DateTime</value>
+        <value xsi:type="xsd:string">Number</value>
     </values>
     <values>
         <field>Form_Section__c</field>
-        <value xsi:type="xsd:string">Date_Date_Time</value>
+        <value xsi:type="xsd:string">QC_Parameters</value>
     </values>
     <values>
         <field>Formula_Logic__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>HTML_Content__c</field>
         <value xsi:nil="true"/>
     </values>
     <values>
@@ -92,7 +100,7 @@
     </values>
     <values>
         <field>Save_To_Database__c</field>
-        <value xsi:type="xsd:boolean">true</value>
+        <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
         <field>Source_Field_API_Name__c</field>

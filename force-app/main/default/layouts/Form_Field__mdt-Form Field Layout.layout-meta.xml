@@ -121,6 +121,10 @@
                 <behavior>Edit</behavior>
                 <field>Formula_Logic__c</field>
             </layoutItems>
+            <layoutItems>
+                <behavior>Edit</behavior>
+                <field>Dynamic_SOQL__c</field>
+            </layoutItems>
         </layoutColumns>
         <style>TwoColumnsLeftToRight</style>
     </layoutSections>

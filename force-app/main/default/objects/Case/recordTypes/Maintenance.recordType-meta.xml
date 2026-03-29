@@ -106,10 +106,6 @@
             <default>false</default>
         </values>
         <values>
-            <fullName>Equipment Complexity</fullName>
-            <default>false</default>
-        </values>
-        <values>
             <fullName>Equipment Design</fullName>
             <default>false</default>
         </values>
@@ -118,16 +114,12 @@
             <default>false</default>
         </values>
         <values>
-            <fullName>Installation</fullName>
-            <default>false</default>
-        </values>
-        <values>
             <fullName>Other</fullName>
             <default>false</default>
         </values>
         <values>
             <fullName>Performance</fullName>
-            <default>false</default>
+            <default>true</default>
         </values>
     </picklistValues>
     <picklistValues>

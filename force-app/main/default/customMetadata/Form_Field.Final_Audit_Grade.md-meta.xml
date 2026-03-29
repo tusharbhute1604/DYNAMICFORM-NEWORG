@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-    <label>Account Manager</label>
+    <label>Final Audit Grade</label>
     <protected>false</protected>
     <values>
         <field>Controller_Field__c</field>
@@ -8,10 +8,14 @@
     </values>
     <values>
         <field>Controlling_Lookup__c</field>
-        <value xsi:type="xsd:string">AccountId</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Default_Value__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
+        <field>Dynamic_SOQL__c</field>
         <value xsi:nil="true"/>
     </values>
     <values>
@@ -20,18 +24,22 @@
     </values>
     <values>
         <field>Field_API_Name__c</field>
-        <value xsi:type="xsd:string">Account_Manager__c</value>
+        <value xsi:type="xsd:string">Final_Audit_Grade__c</value>
     </values>
     <values>
         <field>Field_Type__c</field>
-        <value xsi:type="xsd:string">Lookup</value>
+        <value xsi:type="xsd:string">Text</value>
     </values>
     <values>
         <field>Form_Section__c</field>
-        <value xsi:type="xsd:string">General_Info</value>
+        <value xsi:type="xsd:string">QC_Parameters</value>
     </values>
     <values>
         <field>Formula_Logic__c</field>
+        <value xsi:type="xsd:string">({Cleanliness_Score} + {Speed_Score}) / 2 &gt; 80 ? &apos;Pass&apos; : &apos;Fail&apos;</value>
+    </values>
+    <values>
+        <field>HTML_Content__c</field>
         <value xsi:nil="true"/>
     </values>
     <values>
@@ -40,7 +48,7 @@
     </values>
     <values>
         <field>Key_Prefix__c</field>
-        <value xsi:type="xsd:string">001</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Lookup_Object__c</field>
@@ -48,15 +56,15 @@
     </values>
     <values>
         <field>Lookup_Search_Field__c</field>
-        <value xsi:type="xsd:string">Name,Email</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Lookup_Target_Object__c</field>
-        <value xsi:type="xsd:string">User</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Order__c</field>
-        <value xsi:type="xsd:double">12.0</value>
+        <value xsi:type="xsd:double">3.0</value>
     </values>
     <values>
         <field>Override_Dependency_JSON__c</field>
@@ -64,7 +72,7 @@
     </values>
     <values>
         <field>Override_Label__c</field>
-        <value xsi:type="xsd:string">Account Manager Who Will Be Responsible For Service and Maintenance Of Product</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Override_Picklist_Values__c</field>
@@ -72,7 +80,7 @@
     </values>
     <values>
         <field>Prepopulate__c</field>
-        <value xsi:type="xsd:boolean">true</value>
+        <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
         <field>Read_Only__c</field>
@@ -96,7 +104,7 @@
     </values>
     <values>
         <field>Source_Field_API_Name__c</field>
-        <value xsi:type="xsd:string">OwnerId</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Target_Object_API_Name__c</field>

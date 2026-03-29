@@ -15,6 +15,10 @@
         <value xsi:type="xsd:string">Medium</value>
     </values>
     <values>
+        <field>Dynamic_SOQL__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
         <field>Fetch_On_Edit__c</field>
         <value xsi:type="xsd:boolean">false</value>
     </values>

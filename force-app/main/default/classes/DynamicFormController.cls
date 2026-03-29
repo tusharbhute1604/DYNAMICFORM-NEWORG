@@ -62,6 +62,7 @@ public with sharing class DynamicFormController {
         @AuraEnabled public String defaultValue; 
         @AuraEnabled public String formulaLogic; 
         @AuraEnabled public Boolean saveToDb; 
+        @AuraEnabled public String dynamicSoql; 
     }
 
     public class LookupRecordDetails {
@@ -108,6 +109,7 @@ public with sharing class DynamicFormController {
                 ORDER BY Order__c ASC
             ];
             
+            // *** FIX: Added Dynamic_SOQL__c to the query ***
             List<Form_Field__mdt> allFields = [
                 SELECT Id, Label, Field_API_Name__c, Field_Type__c, Required__c, Order__c, 
                        Visibility_Logic__c, Required_Logic__c, Controller_Field__c, Controlling_Lookup__c, Form_Section__c, 
@@ -116,7 +118,7 @@ public with sharing class DynamicFormController {
                        Prepopulate__c, Read_Only__c, Key_Prefix__c,
                        Source_Field_API_Name__c, Fetch_On_Edit__c, Override_Label__c,
                        Target_Object_API_Name__c, Target_Object_Parent_Field__c,
-                       Help_Text__c, HTML_Content__c,
+                       Help_Text__c, HTML_Content__c, Dynamic_SOQL__c,
                        Default_Value__c, Formula_Logic__c, Save_To_Database__c
                 FROM Form_Field__mdt 
                 WHERE Form_Section__r.Form_Config__r.DeveloperName = :formDeveloperName 
@@ -177,6 +179,7 @@ public with sharing class DynamicFormController {
                         fw.keyPrefix = f.Key_Prefix__c;
                         fw.sourceFieldApiName = f.Source_Field_API_Name__c;
                         fw.fetchOnEdit = f.Fetch_On_Edit__c;
+                        fw.dynamicSoql = f.Dynamic_SOQL__c; // *** NEW ***
                         
                         if (String.isNotBlank(f.Target_Object_API_Name__c)) {
                             fw.targetObject = f.Target_Object_API_Name__c;
@@ -243,6 +246,30 @@ public with sharing class DynamicFormController {
             throw new AuraHandledException(getCleanErrorMessage(e)); 
         }
         return form;
+    }
+
+    // *** NEW: Safe dynamic SOQL execution using Bind Variables ***
+    @AuraEnabled
+    public static SObject executeDynamicQuery(String soqlQuery, Map<String, Object> bindParams) {
+        try {
+            if (String.isBlank(soqlQuery)) return null;
+            
+            // Force a LIMIT 1 to prevent generic list return errors in the UI
+            if (!soqlQuery.toLowerCase().contains('limit 1')) {
+                soqlQuery += ' LIMIT 1';
+            }
+            
+            // System Mode guarantees backend formulas execute accurately regardless of FLS
+            List<SObject> results = Database.queryWithBinds(soqlQuery, bindParams, AccessLevel.SYSTEM_MODE);
+            
+            if (!results.isEmpty()) {
+                return results[0];
+            }
+            return null;
+        } catch (Exception e) {
+            System.debug('Dynamic Query Error: ' + e.getMessage());
+            return null; // Silently fail so bad Admin config doesn't crash the end-user form
+        }
     }
 
     @AuraEnabled(cacheable=true)
@@ -758,7 +785,6 @@ public with sharing class DynamicFormController {
             if (String.isNotBlank(recordTypeId) && String.isNotBlank(fw.targetObject) && fw.targetObject.equalsIgnoreCase(rootObjectApiName)) {
                 try {
                     if(!Test.isRunningTest()) {
-                        // *** FIX: Corrected Class Type and Method Signature ***
                         ConnectApi.PicklistValuesCollection rtValues = ConnectApi.RecordUi.getPicklistValuesByRecordType(fw.targetObject, recordTypeId);
                         
                         if (rtValues != null && rtValues.picklistFieldValues != null) {
@@ -906,6 +932,7 @@ public with sharing class DynamicFormController {
         return obj;
     }
 
+    @TestVisible
     private without sharing class SystemModeDML {
         public void doUpsert(SObject record) {
             upsert record;

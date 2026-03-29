@@ -55,6 +55,7 @@
     <types>
         <members>Form_Config__mdt.Case_Intake</members>
         <members>Form_Config__mdt.Task_Intake</members>
+        <members>Form_Config__mdt.Case_Quality_Score</members>
         <members>Form_Section__mdt.General_Info</members>
         <members>Form_Section__mdt.Picklists</members>
         <members>Form_Section__mdt.Date_Date_Time</members>
@@ -64,6 +65,7 @@
         <members>Form_Section__mdt.Task_Details</members>
         <members>Form_Section__mdt.Country_Service_Mapping</members>
         <members>Form_Section__mdt.Other_Details</members>
+        <members>Form_Section__mdt.QC_Parameters</members>
         <members>Form_Field__mdt.Case_Priority</members>
         <members>Form_Field__mdt.Subject</members>
         <members>Form_Field__mdt.Is_VIP</members>
@@ -96,6 +98,11 @@
         <members>Form_Field__mdt.Source</members>
         <members>Form_Field__mdt.Case_Origin</members>
         <members>Form_Field__mdt.Maintenance_Levels</members>
+        <members>Form_Field_mdt.Has_Maintenance_Task</members>
+        <members>Form_Field_mdt.Is_Maintenance_Task</members>
+        <members>Form_Field_mdt.Cleanliness_Score</members>
+        <members>Form_Field__mdt.Final_Audit_Grade</members>
+        <members>Form_Field__mdt.Speed_Score</members>
         <name>CustomMetadata</name>
     </types>
     <types>
@@ -106,5 +113,5 @@
         <members>Case.QC_Score</members>
         <name>QuickAction</name>
     </types>
-    <version>65.0</version>
+    <version>66.0</version>
 </Package>

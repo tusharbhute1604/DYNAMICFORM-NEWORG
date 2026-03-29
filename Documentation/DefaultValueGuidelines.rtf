@@ -1,0 +1,8 @@
+Data Type,Supported?,Example Value,Notes
+Text / Long Text,✅ Yes,Pending Review,Simple text.
+Number / Currency,✅ Yes,0 or 100.50,Just the number. No $ symbols.
+Checkbox,✅ Yes,true or false,Case sensitive (lowercase usually best in JS).
+Picklist,✅ Yes,Hot,Must match the API Value of the option exactly.
+Date,✅ Yes,2023-12-31,Must use YYYY-MM-DD format.
+Lookup,⚠️ No,N/A,"Avoid. Requires an 18-char ID (e.g. User ID), but won't show the Record Name unless we fetch it. Use Prepopulate instead."
+File Upload,⛔ No,N/A,Cannot default a file.

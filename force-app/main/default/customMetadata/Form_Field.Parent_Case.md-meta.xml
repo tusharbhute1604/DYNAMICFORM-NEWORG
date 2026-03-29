@@ -15,6 +15,10 @@
         <value xsi:nil="true"/>
     </values>
     <values>
+        <field>Dynamic_SOQL__c</field>
+        <value xsi:nil="true"/>
+    </values>
+    <values>
         <field>Fetch_On_Edit__c</field>
         <value xsi:type="xsd:boolean">false</value>
     </values>
@@ -80,7 +84,7 @@
     </values>
     <values>
         <field>Read_Only__c</field>
-        <value xsi:type="xsd:boolean">true</value>
+        <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
         <field>Relationship_Parent_Field__c</field>

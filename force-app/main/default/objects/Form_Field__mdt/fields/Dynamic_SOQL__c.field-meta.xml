@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Dynamic_SOQL__c</fullName>
+    <description>Admin can add an SOQL query in this field to fetch data for the field</description>
+    <fieldManageability>SubscriberControlled</fieldManageability>
+    <inlineHelpText>Example of what an Admin would put in this field for your exact use case: SELECT IsViolated FROM CaseMilestone WHERE CaseId = &apos;{Case__c}&apos; AND MilestoneType.Name = &apos;Resolution&apos; LIMIT 1</inlineHelpText>
+    <label>Dynamic SOQL</label>
+    <length>32768</length>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

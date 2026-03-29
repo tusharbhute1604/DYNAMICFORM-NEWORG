@@ -117,6 +117,23 @@
         &quot;LU&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
         &quot;IT&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } }
       }
+    },
+    { 
+      &quot;label&quot;: &quot;Barclays Payment Gateway&quot;, 
+      &quot;key&quot;: &quot;Barclays_Payment_Gateway&quot;,
+      &quot;cells&quot;: {
+        &quot;GB&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-1&quot; } },
+        &quot;US&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-2&quot; } },
+        &quot;IE&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
+        &quot;DE&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
+        &quot;PT&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
+        &quot;FR&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
+        &quot;ES&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
+        &quot;NL&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
+        &quot;BE&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
+        &quot;LU&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } },
+        &quot;IT&quot;: { &quot;readonlyLogic&quot;: { &quot;when&quot;: &quot;Maintenance_Levels__c&quot;, &quot;operator&quot;: &quot;excludes&quot;, &quot;value&quot;: &quot;Level-3&quot; } }
+      }
     }
   ]
 }</value>

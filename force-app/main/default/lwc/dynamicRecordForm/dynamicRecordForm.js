@@ -8,6 +8,7 @@ import getRecordDetails from '@salesforce/apex/DynamicFormController.getRecordDe
 import getExistingRecordData from '@salesforce/apex/DynamicFormController.getExistingRecordData';
 import getSourceRecordData from '@salesforce/apex/DynamicFormController.getSourceRecordData'; 
 import uploadFile from '@salesforce/apex/DynamicFormController.uploadFile'; 
+import executeDynamicQuery from '@salesforce/apex/DynamicFormController.executeDynamicQuery';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 
@@ -71,6 +72,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
     _activeLookup = null;
     _activeSearchTerms = {};
+    _activeSoqlQueries = {};
 
     @track labels = {
         cancel: 'Cancel', next: 'Next', previous: 'Previous', finish: 'Finish',
@@ -414,6 +416,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     this.applyMatrixRules(); 
                     this.fetchDependentData(); 
                     this.fetchMissingLookupDetails(); 
+                    
+                    for (let uuid in this.sectionData) {
+                        for (let fieldApi in this.sectionData[uuid]) {
+                            if (this.sectionData[uuid][fieldApi]) {
+                                this.evaluateDynamicQueries(fieldApi, uuid);
+                            }
+                        }
+                    }
                 } catch(error) {
                     console.error(error);
                 } finally {
@@ -546,9 +556,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         forceRepaint = true;
                     }
 
-                    // *** FIX: Stale Data Scrubbing ***
-                    // If logic determines the cell is disabled, forcefully wipe its value.
-                    // This guarantees `handleSubmit` will trigger a database deletion for any orphaned data.
                     if (shouldBeReadOnly) {
                         const emptyVal = cell.isCheckbox ? 'false' : '';
                         const emptyDisplay = cell.isCheckbox ? false : '';
@@ -566,7 +573,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             }
         }
         
-        // Force the LWC array to re-render if memory states were wiped
         if (forceRepaint) {
             this.sections = [...this.sections];
         }
@@ -780,6 +786,18 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             let mappedUiType = String(this.mapType(f.type));
             let stepVal = (mappedUiType === 'number') ? 'any' : null;
 
+            let dynamicSoqlStr = f.dynamicSoql ? String(f.dynamicSoql) : null;
+            let soqlDependenciesArr = [];
+            if (dynamicSoqlStr) {
+                const regex = /\{([^}]+)\}/g;
+                let match;
+                while ((match = regex.exec(dynamicSoqlStr)) !== null) {
+                    if(!soqlDependenciesArr.includes(match[1])) {
+                        soqlDependenciesArr.push(match[1]);
+                    }
+                }
+            }
+
             return {
                 ...f, 
                 isStaticRequired: isStaticRequired, 
@@ -804,6 +822,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 
                 uiType: mappedUiType, 
                 step: stepVal,
+                dynamicSoql: dynamicSoqlStr, 
+                soqlDependencies: soqlDependenciesArr, 
                 currentValue: finalValue, 
                 currentDetails: currentDetails ? String(currentDetails) : '', 
                 isVisible: true, 
@@ -835,7 +855,94 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             this.calculateFormulas();
             this.evaluateVisibility(); 
             this.applyMatrixRules(); 
+            
+            this.evaluateDynamicQueries(fieldApi, rowId);
         }
+    }
+
+    evaluateDynamicQueries(changedFieldApi, rowId) {
+        if (!this._activeSoqlQueries) this._activeSoqlQueries = {};
+        for (let sec of this.sections) {
+            if (!sec.rows) continue;
+            for (let row of sec.rows) {
+                for (let f of row.fields) {
+                    if (f.dynamicSoql && f.soqlDependencies && f.soqlDependencies.includes(changedFieldApi)) {
+                        this.executeSingleDynamicQuery(f, row.id);
+                    }
+                }
+            }
+        }
+    }
+
+    executeSingleDynamicQuery(field, rowId) {
+        let bindParams = {};
+        let hasAllParams = true;
+        
+        field.soqlDependencies.forEach(dep => {
+            let val = null;
+            if (this.sectionData[rowId] && this.sectionData[rowId][dep] !== undefined) {
+                val = this.sectionData[rowId][dep];
+            } else {
+                val = this.getGlobalValue(dep);
+            }
+            
+            if (val === undefined || val === null || val === '') {
+                hasAllParams = false;
+            }
+            bindParams[dep] = val;
+        });
+
+        if (!hasAllParams) {
+            let emptyVal = field.isMultiSelect ? [] : (field.isCheckbox ? false : '');
+            if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== emptyVal) {
+                this.sectionData[rowId][field.apiName] = emptyVal;
+                this.updateFieldState(rowId, field.apiName, { currentValue: emptyVal });
+                this.calculateFormulas();
+                this.evaluateVisibility();
+            }
+            return; 
+        }
+
+        let safeQuery = field.dynamicSoql.replace(/'?\{([^}]+)\}'?/g, ':$1');
+        
+        const queryKey = `${rowId}-${field.apiName}`;
+        const currentQueryStr = JSON.stringify(bindParams);
+        this._activeSoqlQueries[queryKey] = currentQueryStr;
+
+        executeDynamicQuery({ soqlQuery: safeQuery, bindParams: bindParams })
+            .then(result => {
+                if (this._activeSoqlQueries[queryKey] !== currentQueryStr) return; 
+
+                let newValue = field.isCheckbox ? false : '';
+                if (result) {
+                    const extractVal = (obj) => {
+                        for (let key in obj) {
+                            if (key !== 'attributes' && key !== 'Id') {
+                                if (typeof obj[key] === 'object' && obj[key] !== null) return extractVal(obj[key]);
+                                return obj[key];
+                            }
+                        }
+                        return obj.Id || null;
+                    };
+                    let extracted = extractVal(result);
+                    if (extracted !== null && extracted !== undefined) {
+                        newValue = extracted;
+                    }
+                }
+                
+                if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== newValue) {
+                    this.sectionData[rowId][field.apiName] = newValue;
+                    this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
+                    this.filterDependencies(rowId, field.apiName, newValue);
+                    this.calculateFormulas();
+                    this.evaluateVisibility();
+                    this.applyMatrixRules();
+                    this.evaluateDynamicQueries(field.apiName, rowId); 
+                }
+            })
+            .catch(err => {
+                console.error('Dynamic SOQL Error:', err);
+            });
     }
 
     filterDependencies(rowId, ctrlApi, ctrlVal) { 
@@ -868,6 +975,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
+    // *** FIX: Refactored Formula Engine to handle cross-section references & trigger LWC Repaint ***
     calculateFormulas() {
         for (let sec of this.sections) {
             if (!sec.rows) continue;
@@ -880,15 +988,23 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             let expression = f.formulaLogic;
                             const regex = /\{([^}]+)\}/g;
                             const parsedExpression = expression.replace(regex, (match, fieldName) => {
-                                let val = rowData[fieldName];
+                                let val;
+                                // 1. Support Cross-Section references by defaulting to Global search if missing from local row
+                                if (rowData && rowData.hasOwnProperty(fieldName)) {
+                                    val = rowData[fieldName];
+                                } else {
+                                    val = this.getGlobalValue(fieldName);
+                                }
+
                                 if (val === undefined || val === null || val === '') return 0; 
                                 return !isNaN(val) ? val : `"${val}"`;
                             });
                             const result = new Function('return ' + parsedExpression)();
                             
+                            // 2. ONLY update the background data state. 
+                            // Do NOT mutate f.currentValue here. evaluateVisibility() must detect the delta to force a repaint.
                             if (rowData[f.apiName] !== result) {
                                 rowData[f.apiName] = result;
-                                if (f.currentValue !== result) f.currentValue = result;
                             }
                         } catch (err) {}
                     }
@@ -1293,12 +1409,17 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click' 
             });
             
+            if (idChanged) {
+                this.evaluateDynamicQueries(fieldApi, rowId);
+            }
+
             this.sectionData = { ...this.sectionData }; 
             this.evaluateVisibility();
             return;
         }
 
         if (idChanged) {
+            this.evaluateDynamicQueries(fieldApi, rowId);
             this.sectionData = { ...this.sectionData }; 
             this.evaluateVisibility();
         }
@@ -1340,6 +1461,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
         this.updateFieldState(rowId, fieldApi, { currentValue: label, currentDetails: details, showLookupOptions: false, lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click' });
         this.handleReactiveContextChange(fieldApi, recordId);
+        
+        this.evaluateDynamicQueries(fieldApi, rowId);
         
         this.sectionData = { ...this.sectionData }; 
         this.evaluateVisibility();
