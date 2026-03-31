@@ -168,7 +168,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         // WE REMOVED the strict block on `!this.objectApiName` here because 
         // Visualforce (Lightning Out) does not automatically inject it.
 
-        const currentKey = `${this.recordId}-${this.objectApiName}-${this.formMode}`;
+        const currentKey = `${this.recordId}-${this.objectApiName}-${this.formMode}-${this.recordTypeId}`;
         if (this._lastLoadKey === currentKey) return;
         this._lastLoadKey = currentKey; 
 
