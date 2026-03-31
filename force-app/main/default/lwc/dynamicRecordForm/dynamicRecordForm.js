@@ -9,6 +9,7 @@ import getExistingRecordData from '@salesforce/apex/DynamicFormController.getExi
 import getSourceRecordData from '@salesforce/apex/DynamicFormController.getSourceRecordData'; 
 import uploadFile from '@salesforce/apex/DynamicFormController.uploadFile'; 
 import executeDynamicQuery from '@salesforce/apex/DynamicFormController.executeDynamicQuery';
+import rollbackTransaction from '@salesforce/apex/DynamicFormController.rollbackTransaction'; // *** NEW: Safe Rollback Import ***
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 
@@ -24,11 +25,12 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     @api formMode = 'auto';
     @api isLightningOut = false; 
 
+    // *** FIX: Robust handling for undefined Record Type IDs in Quick Actions ***
     _recordTypeId = '';
     @api 
     get recordTypeId() { return this._recordTypeId; }
     set recordTypeId(value) {
-        this._recordTypeId = value ? value : '';
+        this._recordTypeId = (value === undefined || value === null) ? '' : value;
     }
 
     _recordId;
@@ -73,6 +75,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     _activeLookup = null;
     _activeSearchTerms = {};
     _activeSoqlQueries = {};
+    _isSaveCommitted = false; // *** NEW: Prevents false-positive rollbacks ***
 
     @track labels = {
         cancel: 'Cancel', next: 'Next', previous: 'Previous', finish: 'Finish',
@@ -155,6 +158,16 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     initializeComponent() {
         if (!this._cachedMetadata) return;
 
+        // *** FIX: Quick Action Race Condition Guard ***
+        // Only block if we are explicitly in edit mode but haven't received the recordId yet.
+        const mode = this.formMode ? this.formMode.toLowerCase() : 'auto';
+        if (mode === 'edit' && !this.recordId) {
+            return; 
+        }
+
+        // WE REMOVED the strict block on `!this.objectApiName` here because 
+        // Visualforce (Lightning Out) does not automatically inject it.
+
         const currentKey = `${this.recordId}-${this.objectApiName}-${this.formMode}`;
         if (this._lastLoadKey === currentKey) return;
         this._lastLoadKey = currentKey; 
@@ -175,7 +188,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
 
         let shouldLoadData = false;
-        const mode = this.formMode ? this.formMode.toLowerCase() : 'auto';
 
         if (mode === 'create') shouldLoadData = false; 
         else if (mode === 'edit') shouldLoadData = true; 
@@ -975,7 +987,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
-    // *** FIX: Refactored Formula Engine to handle cross-section references & trigger LWC Repaint ***
     calculateFormulas() {
         for (let sec of this.sections) {
             if (!sec.rows) continue;
@@ -989,7 +1000,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             const regex = /\{([^}]+)\}/g;
                             const parsedExpression = expression.replace(regex, (match, fieldName) => {
                                 let val;
-                                // 1. Support Cross-Section references by defaulting to Global search if missing from local row
                                 if (rowData && rowData.hasOwnProperty(fieldName)) {
                                     val = rowData[fieldName];
                                 } else {
@@ -1001,8 +1011,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             });
                             const result = new Function('return ' + parsedExpression)();
                             
-                            // 2. ONLY update the background data state. 
-                            // Do NOT mutate f.currentValue here. evaluateVisibility() must detect the delta to force a repaint.
                             if (rowData[f.apiName] !== result) {
                                 rowData[f.apiName] = result;
                             }
@@ -1231,19 +1239,32 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
+    // *** FIX: Strict Rollback Logic ensures data is only deleted if a Save actually happened ***
     handleCancel() { 
         if (this.isLoading) return;
-        const isSafeToDelete = (!this.isEditMode && this.savedRecordId);
-        if (isSafeToDelete) { 
+        
+        // Define what constitutes a true rollback scenario
+        const isSafeToRollback = (
+            !this.isEditMode && // We only rollback newly created records, never existing ones
+            this.savedRecordId && // There must be a temporary ID in memory
+            this._isSaveCommitted // CRITICAL: The user MUST have clicked Save previously
+        );
+
+        if (isSafeToRollback) { 
             this.isLoading = true; 
-            deleteRecord({ recordId: this.savedRecordId }).then(() => { 
+            rollbackTransaction({ recordId: this.savedRecordId })
+            .then(() => { 
                 this.showToast('Success', 'Submission cancelled. Record rolled back.', 'info'); 
                 this.navigateBack(); 
-            }).catch(error => { 
-                this.showToast('Error', 'Failed to rollback: ' + error.body.message, 'error'); 
-                this.isLoading = false; 
+            })
+            .catch(error => { 
+                this.showToast('Error', 'Failed to rollback: ' + (error.body ? error.body.message : error.message), 'error'); 
+            })
+            .finally(() => {
+                this.isLoading = false;
             }); 
         } else { 
+            // Standard form dismissal
             this.navigateBack(); 
         } 
     }
@@ -2053,6 +2074,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         })
         .then(result => { 
             this.savedRecordId = result.parentId;
+            
+            // *** FIX: Track that a save occurred so we know rollbacks are safe ***
+            this._isSaveCommitted = true; 
+            
             const childIdMap = result.childIds || {}; 
 
             let phase2Promises = [];
@@ -2140,12 +2165,15 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         })
         .catch(error => { 
             console.error('Submission Error:', error);
-            if (!this.isEditMode && this.savedRecordId) {
+            
+            // *** FIX: Validate that a save was committed before attempting a rollback on error ***
+            if (!this.isEditMode && this.savedRecordId && this._isSaveCommitted) {
                 this.isLoading = true;
-                deleteRecord({ recordId: this.savedRecordId })
+                rollbackTransaction({ recordId: this.savedRecordId })
                     .then(() => {
                         this.showToast('Error', 'Submission failed. Record rolled back.', 'error');
                         this.savedRecordId = null;
+                        this._isSaveCommitted = false; 
                     })
                     .catch(delErr => {
                         this.showToast('Error', 'Submission failed and rollback failed. Please contact admin.', 'error');

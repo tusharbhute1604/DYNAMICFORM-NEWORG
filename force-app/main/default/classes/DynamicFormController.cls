@@ -109,7 +109,6 @@ public with sharing class DynamicFormController {
                 ORDER BY Order__c ASC
             ];
             
-            // *** FIX: Added Dynamic_SOQL__c to the query ***
             List<Form_Field__mdt> allFields = [
                 SELECT Id, Label, Field_API_Name__c, Field_Type__c, Required__c, Order__c, 
                        Visibility_Logic__c, Required_Logic__c, Controller_Field__c, Controlling_Lookup__c, Form_Section__c, 
@@ -179,7 +178,7 @@ public with sharing class DynamicFormController {
                         fw.keyPrefix = f.Key_Prefix__c;
                         fw.sourceFieldApiName = f.Source_Field_API_Name__c;
                         fw.fetchOnEdit = f.Fetch_On_Edit__c;
-                        fw.dynamicSoql = f.Dynamic_SOQL__c; // *** NEW ***
+                        fw.dynamicSoql = f.Dynamic_SOQL__c;
                         
                         if (String.isNotBlank(f.Target_Object_API_Name__c)) {
                             fw.targetObject = f.Target_Object_API_Name__c;
@@ -248,18 +247,15 @@ public with sharing class DynamicFormController {
         return form;
     }
 
-    // *** NEW: Safe dynamic SOQL execution using Bind Variables ***
     @AuraEnabled
     public static SObject executeDynamicQuery(String soqlQuery, Map<String, Object> bindParams) {
         try {
             if (String.isBlank(soqlQuery)) return null;
             
-            // Force a LIMIT 1 to prevent generic list return errors in the UI
             if (!soqlQuery.toLowerCase().contains('limit 1')) {
                 soqlQuery += ' LIMIT 1';
             }
             
-            // System Mode guarantees backend formulas execute accurately regardless of FLS
             List<SObject> results = Database.queryWithBinds(soqlQuery, bindParams, AccessLevel.SYSTEM_MODE);
             
             if (!results.isEmpty()) {
@@ -268,7 +264,7 @@ public with sharing class DynamicFormController {
             return null;
         } catch (Exception e) {
             System.debug('Dynamic Query Error: ' + e.getMessage());
-            return null; // Silently fail so bad Admin config doesn't crash the end-user form
+            return null; 
         }
     }
 
@@ -711,6 +707,25 @@ public with sharing class DynamicFormController {
         }
     }
 
+    // *** NEW: Explicit Rollback Method to prevent false-positive deletions ***
+    @AuraEnabled
+    public static void rollbackTransaction(String recordId) {
+        if (String.isNotBlank(recordId)) {
+            try {
+                String cleanId = recordId.replaceAll('[^a-zA-Z0-9]', '');
+                if (cleanId.length() >= 15) {
+                    Id recId = (Id)cleanId;
+                    Schema.SObjectType sType = recId.getSObjectType();
+                    if (sType != null) {
+                        Database.delete(sType.newSObject(recId));
+                    }
+                }
+            } catch (Exception e) {
+                System.debug('Error rolling back transactional save: ' + e.getMessage());
+            }
+        }
+    }
+
     @AuraEnabled
     public static Id uploadFile(String parentId, String fileName, String base64Data) {
         try {
@@ -729,9 +744,6 @@ public with sharing class DynamicFormController {
         }
     }
 
-    // =====================================================================
-    // UTILITY: Extracts user-friendly error messages from generic Exceptions
-    // =====================================================================
     private static String getCleanErrorMessage(Exception e) {
         if (e instanceof System.DmlException) {
             return ((System.DmlException)e).getDmlMessage(0);
