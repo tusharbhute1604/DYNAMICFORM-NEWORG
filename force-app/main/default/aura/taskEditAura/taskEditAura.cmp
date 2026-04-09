@@ -1,0 +1,13 @@
+<aura:component implements="force:lightningQuickActionWithoutHeader,force:hasRecordId" access="global">
+    <aura:html tag="style">
+        .cuf-content { padding: 0 !important; }
+        .slds-p-around--medium { padding: 0 !important; }
+        .slds-modal__content { height:unset !important; max-height:unset !important; }
+    </aura:html>
+
+    <c:taskEditWrapper 
+        recordId="{!v.recordId}" 
+        objectApiName="Task"
+        oncloseaction="{!c.closeModal}">
+    </c:taskEditWrapper>
+</aura:component>

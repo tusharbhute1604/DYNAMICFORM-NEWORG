@@ -251,19 +251,12 @@ public with sharing class DynamicFormController {
     public static SObject executeDynamicQuery(String soqlQuery, Map<String, Object> bindParams) {
         try {
             if (String.isBlank(soqlQuery)) return null;
-            
-            if (!soqlQuery.toLowerCase().contains('limit 1')) {
-                soqlQuery += ' LIMIT 1';
-            }
+            if (!soqlQuery.toLowerCase().contains('limit 1')) soqlQuery += ' LIMIT 1';
             
             List<SObject> results = Database.queryWithBinds(soqlQuery, bindParams, AccessLevel.SYSTEM_MODE);
-            
-            if (!results.isEmpty()) {
-                return results[0];
-            }
+            if (!results.isEmpty()) return results[0];
             return null;
         } catch (Exception e) {
-            System.debug('Dynamic Query Error: ' + e.getMessage());
             return null; 
         }
     }
@@ -275,9 +268,7 @@ public with sharing class DynamicFormController {
             List<String> fieldList = searchFields.split(',');
             String whereClause = '';
             for(String f : fieldList) {
-                if(whereClause != '') {
-                    whereClause += ' OR ';
-                }
+                if(whereClause != '') whereClause += ' OR ';
                 whereClause += String.escapeSingleQuotes(f.trim()) + ' LIKE :key';
             }
             String query = 'SELECT Id, ' + String.escapeSingleQuotes(searchFields) + ' FROM ' + String.escapeSingleQuotes(objectApiName) + ' WHERE (' + whereClause + ') LIMIT 10';
@@ -292,12 +283,8 @@ public with sharing class DynamicFormController {
                 if (secondaryField != null) {
                     try { 
                         Object val = rec.get(secondaryField); 
-                        if (val != null) {
-                            metaVal = String.valueOf(val); 
-                        }
-                    } catch (Exception e) { 
-                        metaVal = ''; 
-                    }
+                        if (val != null) metaVal = String.valueOf(val); 
+                    } catch (Exception e) { metaVal = ''; }
                 }
                 if (fieldList.size() > 1) {
                     List<String> detailLines = new List<String>();
@@ -309,9 +296,7 @@ public with sharing class DynamicFormController {
                             detailLines.add(fName + ': ' + displayVal); 
                         } catch (Exception e) {}
                     }
-                    if (!detailLines.isEmpty()) {
-                        detailsVal = String.join(detailLines, '\n');
-                    }
+                    if (!detailLines.isEmpty()) detailsVal = String.join(detailLines, '\n');
                 }
                 results.add(new Map<String, String>{'id' => (String)rec.get('Id'), 'label' => labelVal, 'meta' => metaVal, 'details' => detailsVal});
             }
@@ -324,9 +309,7 @@ public with sharing class DynamicFormController {
     @AuraEnabled(cacheable=true)
     public static LookupRecordDetails getRecordDetails(String recordId, String objectApiName, String searchFields) {
         LookupRecordDetails result = new LookupRecordDetails();
-        if (String.isBlank(recordId)) {
-            return result;
-        }
+        if (String.isBlank(recordId)) return result;
         try {
             List<String> fieldList = searchFields.split(',');
             String query = 'SELECT ' + String.escapeSingleQuotes(searchFields) + ' FROM ' + String.escapeSingleQuotes(objectApiName) + ' WHERE Id = :recordId LIMIT 1';
@@ -344,9 +327,7 @@ public with sharing class DynamicFormController {
                         detailLines.add(fName + ': ' + displayVal); 
                     } catch (Exception e) {}
                 }
-                if (!detailLines.isEmpty()) {
-                    result.details = String.join(detailLines, '\n');
-                }
+                if (!detailLines.isEmpty()) result.details = String.join(detailLines, '\n');
             }
         } catch (Exception e) { 
             result.id = recordId; 
@@ -358,9 +339,7 @@ public with sharing class DynamicFormController {
     @AuraEnabled
     public static Map<String, Map<String, Object>> getSourceRecordData(String sourceRecordId, List<String> sourceFields) {
         Map<String, Map<String, Object>> result = new Map<String, Map<String, Object>>();
-        if (String.isBlank(sourceRecordId) || sourceFields == null || sourceFields.isEmpty()) {
-            return result;
-        }
+        if (String.isBlank(sourceRecordId) || sourceFields == null || sourceFields.isEmpty()) return result;
         try {
             String cleanId = sourceRecordId.replaceAll('[^a-zA-Z0-9]', '');
             if (cleanId.length() < 15) return result;
@@ -372,9 +351,8 @@ public with sharing class DynamicFormController {
             String objName = sType.getDescribe().getName();
             Map<String, SObjectField> rawFieldMap = sType.getDescribe().fields.getMap();
             Map<String, SObjectField> lowerFieldMap = new Map<String, SObjectField>();
-            for(String key : rawFieldMap.keySet()) {
-                lowerFieldMap.put(key.toLowerCase(), rawFieldMap.get(key));
-            }
+            for(String key : rawFieldMap.keySet()) lowerFieldMap.put(key.toLowerCase(), rawFieldMap.get(key));
+            
             Set<String> queryFields = new Set<String>();
             Map<String, String> relationMap = new Map<String, String>();
             for(String f : sourceFields) {
@@ -395,24 +373,21 @@ public with sharing class DynamicFormController {
                     }
                 }
             }
-            if(queryFields.isEmpty()) {
-                return result;
-            }
+            if(queryFields.isEmpty()) return result;
+            
             String q = 'SELECT ' + String.join(new List<String>(queryFields), ',') + ' FROM ' + String.escapeSingleQuotes(objName) + ' WHERE Id = :recId LIMIT 1';
             List<SObject> records = Database.query(q);
-            if(records.isEmpty()) {
-                return result;
-            }
+            if(records.isEmpty()) return result;
             SObject res = records[0];
+            
             for(String f : sourceFields) {
                 String fLower = f.toLowerCase();
-                if (!lowerFieldMap.containsKey(fLower)) {
-                    continue;
-                }
+                if (!lowerFieldMap.containsKey(fLower)) continue;
                 String realApiName = lowerFieldMap.get(fLower).getDescribe().getName();
                 Map<String, Object> data = new Map<String, Object>();
                 Object val = res.get(realApiName);
                 data.put('value', val);
+                
                 if(relationMap.containsKey(f)) {
                     String path = relationMap.get(f);
                     List<String> parts = path.split('\\.');
@@ -420,10 +395,7 @@ public with sharing class DynamicFormController {
                     Boolean safe = true;
                     for(Integer i=0; i<parts.size()-1; i++) { 
                         temp = temp.getSObject(parts[i]); 
-                        if(temp == null) { 
-                            safe = false; 
-                            break; 
-                        } 
+                        if(temp == null) { safe = false; break; } 
                     }
                     if(safe && temp.get(parts[parts.size()-1]) != null) {
                         data.put('label', temp.get(parts[parts.size()-1])); 
@@ -443,9 +415,7 @@ public with sharing class DynamicFormController {
 
     @AuraEnabled
     public static Map<String, Object> getExistingRecordData(String recordId, String objectApiName, String queryConfigJson) {
-        if (String.isBlank(recordId) || String.isBlank(objectApiName) || String.isBlank(queryConfigJson)) {
-            return null;
-        }
+        if (String.isBlank(recordId) || String.isBlank(objectApiName) || String.isBlank(queryConfigJson)) return null;
         Map<String, Object> response = new Map<String, Object>();
         try {
             Map<String, Object> config = (Map<String, Object>)JSON.deserializeUntyped(queryConfigJson);
@@ -463,6 +433,9 @@ public with sharing class DynamicFormController {
                     if (type == 'Lookup' && String.isNotBlank(search)) { 
                         String relField = getRelationshipField(api); 
                         String firstSearchField = search.split(',')[0].trim(); 
+                        if (api.equalsIgnoreCase('WhatId') || api.equalsIgnoreCase('WhoId') || api.equalsIgnoreCase('OwnerId')) {
+                            firstSearchField = 'Name';
+                        }
                         String path = relField + '.' + firstSearchField; 
                         parentFields.add(path); 
                         parentLookupMap.put(api, path); 
@@ -471,9 +444,8 @@ public with sharing class DynamicFormController {
             }
             String parentQuery = 'SELECT ' + String.join(new List<String>(parentFields), ',') + ' FROM ' + String.escapeSingleQuotes(objectApiName) + ' WHERE Id = :recordId LIMIT 1';
             List<SObject> parentList = Database.query(parentQuery);
-            if (parentList.isEmpty()) {
-                return null;
-            }
+            if (parentList.isEmpty()) return null;
+            
             response.put('parent', processRecord(parentList[0], parentLookupMap));
             
             Map<String, List<Map<String, Object>>> childData = new Map<String, List<Map<String, Object>>>();
@@ -486,9 +458,8 @@ public with sharing class DynamicFormController {
                     String parentField = (String)childMap.get('parentField');
                     List<Object> fieldsList = (List<Object>)childMap.get('fields');
                     
-                    if (String.isBlank(childObj) || String.isBlank(parentField)) {
-                        continue;
-                    }
+                    if (String.isBlank(childObj) || String.isBlank(parentField)) continue;
+                    
                     Set<String> cFields = new Set<String>{'Id'};
                     Map<String, String> childLookupMap = new Map<String, String>();
                     if (fieldsList != null) {
@@ -501,6 +472,9 @@ public with sharing class DynamicFormController {
                             if (type == 'Lookup' && String.isNotBlank(search)) { 
                                 String relField = getRelationshipField(api); 
                                 String firstSearchField = search.split(',')[0].trim(); 
+                                if (api.equalsIgnoreCase('WhatId') || api.equalsIgnoreCase('WhoId') || api.equalsIgnoreCase('OwnerId')) {
+                                    firstSearchField = 'Name';
+                                }
                                 String path = relField + '.' + firstSearchField; 
                                 cFields.add(path); 
                                 childLookupMap.put(api, path); 
@@ -509,18 +483,12 @@ public with sharing class DynamicFormController {
                     }
                     
                     String childQuery = 'SELECT ' + String.join(new List<String>(cFields), ',') + ' FROM ' + String.escapeSingleQuotes(childObj) + ' WHERE ' + String.escapeSingleQuotes(parentField) + ' = :recordId LIMIT 100';
-                    
                     List<SObject> records = Database.query(childQuery);
                     List<Map<String, Object>> processedChildren = new List<Map<String, Object>>();
-                    for(SObject rec : records) {
-                        processedChildren.add(processRecord(rec, childLookupMap));
-                    }
+                    for(SObject rec : records) processedChildren.add(processRecord(rec, childLookupMap));
                     
-                    if (childData.containsKey(childObj)) {
-                        childData.get(childObj).addAll(processedChildren);
-                    } else {
-                        childData.put(childObj, processedChildren);
-                    }
+                    if (childData.containsKey(childObj)) childData.get(childObj).addAll(processedChildren);
+                    else childData.put(childObj, processedChildren);
                 }
             }
             response.put('children', childData);
@@ -548,25 +516,34 @@ public with sharing class DynamicFormController {
             }
 
             if (recordsToDelete != null && !recordsToDelete.isEmpty()) {
-                List<SObject> objsToDelete = new List<SObject>();
+                Map<Schema.SObjectType, List<Id>> idsByType = new Map<Schema.SObjectType, List<Id>>();
                 for (String rid : recordsToDelete) { 
                     if (String.isNotBlank(rid)) {
                         String cleanId = rid.replaceAll('[^a-zA-Z0-9]', '');
                         if (cleanId.length() >= 15) {
-                            Id recId = (Id)cleanId;
-                            Schema.SObjectType sType = recId.getSObjectType();
-                            if (sType != null) {
-                                objsToDelete.add(sType.newSObject(recId)); 
-                            }
+                            try {
+                                Id recId = (Id)cleanId;
+                                Schema.SObjectType sType = recId.getSObjectType();
+                                if (sType != null) {
+                                    if (!idsByType.containsKey(sType)) idsByType.put(sType, new List<Id>());
+                                    idsByType.get(sType).add(recId);
+                                }
+                            } catch (Exception e) {}
                         }
                     }
                 }
+                
+                List<SObject> objsToDelete = new List<SObject>();
+                for (Schema.SObjectType sType : idsByType.keySet()) {
+                    String objName = sType.getDescribe().getName();
+                    List<Id> idList = idsByType.get(sType);
+                    String q = 'SELECT Id FROM ' + String.escapeSingleQuotes(objName) + ' WHERE Id IN :idList';
+                    objsToDelete.addAll(Database.query(q));
+                }
+
                 if (!objsToDelete.isEmpty()) {
-                    if (saveWithoutSharing != null && saveWithoutSharing) {
-                        sysDml.doDelete(objsToDelete);
-                    } else {
-                        Database.delete(objsToDelete);
-                    }
+                    if (saveWithoutSharing != null && saveWithoutSharing) sysDml.doDelete(objsToDelete);
+                    else Database.delete(objsToDelete);
                 }
             }
 
@@ -579,36 +556,25 @@ public with sharing class DynamicFormController {
             }
 
             Map<String, Object> lowerPayload = new Map<String, Object>();
-            for (String key : cleanPayload.keySet()) {
-                lowerPayload.put(key.toLowerCase(), cleanPayload.get(key));
-            }
+            for (String key : cleanPayload.keySet()) lowerPayload.put(key.toLowerCase(), cleanPayload.get(key));
 
             String parentKey = parentObjectApiName.toLowerCase();
-            if (!lowerPayload.containsKey(parentKey)) {
-                throw new AuraHandledException('Payload missing data for parent object: ' + parentObjectApiName);
-            }
+            if (!lowerPayload.containsKey(parentKey)) throw new AuraHandledException('Payload missing data for parent object: ' + parentObjectApiName);
 
             Map<String, Object> parentData = (Map<String, Object>)lowerPayload.get(parentKey);
             SObject parentRec = createSObject(parentObjectApiName, parentData);
-            if (parentRec == null) {
-                throw new AuraHandledException('Invalid Parent Object');
-            }
+            if (parentRec == null) throw new AuraHandledException('Invalid Parent Object');
             
-            if (parentData.containsKey('Id') && parentData.get('Id') != null) {
-                parentRec.Id = (Id)String.valueOf(parentData.get('Id')).replaceAll('[^a-zA-Z0-9]', ''); 
-            } else if (parentData.containsKey('id') && parentData.get('id') != null) {
-                parentRec.Id = (Id)String.valueOf(parentData.get('id')).replaceAll('[^a-zA-Z0-9]', ''); 
-            }
+            if (parentData.containsKey('Id') && parentData.get('Id') != null) parentRec.Id = (Id)String.valueOf(parentData.get('Id')).replaceAll('[^a-zA-Z0-9]', ''); 
+            else if (parentData.containsKey('id') && parentData.get('id') != null) parentRec.Id = (Id)String.valueOf(parentData.get('id')).replaceAll('[^a-zA-Z0-9]', ''); 
 
-            if (saveWithoutSharing != null && saveWithoutSharing) {
-                sysDml.doUpsert(parentRec);
-            } else {
-                upsert parentRec;
-            }
+            if (saveWithoutSharing != null && saveWithoutSharing) sysDml.doUpsert(parentRec);
+            else upsert parentRec;
             
             response.put('parentId', parentRec.Id);
 
             Map<String, String> createdChildIds = new Map<String, String>();
+            List<String> allInsertedChildIds = new List<String>(); 
 
             for (String objName : lowerPayload.keySet()) {
                 if (objName == parentKey) continue; 
@@ -616,12 +582,8 @@ public with sharing class DynamicFormController {
                 Object rawChildData = lowerPayload.get(objName);
                 String lookupField = null;
                 for(String relKey : cleanRelMap.keySet()) { 
-                    if(relKey.equalsIgnoreCase(objName)) { 
-                        lookupField = String.valueOf(cleanRelMap.get(relKey)); 
-                        break; 
-                    } 
+                    if(relKey.equalsIgnoreCase(objName)) { lookupField = String.valueOf(cleanRelMap.get(relKey)); break; } 
                 }
-                
                 if (String.isBlank(lookupField)) continue;
 
                 if (rawChildData instanceof List<Object>) {
@@ -639,18 +601,15 @@ public with sharing class DynamicFormController {
                                 childRec.Id = (Id)String.valueOf(itemMap.get('id')).replaceAll('[^a-zA-Z0-9]', ''); 
                                 isUpdate = true; 
                             }
-                            if (!isUpdate && childRec.get(lookupField) == null) {
-                                childRec.put(lookupField, parentRec.Id);
-                            }
+                            if (!isUpdate && childRec.get(lookupField) == null) childRec.put(lookupField, parentRec.Id);
                             recordsToInsert.add(childRec);
                         }
                     }
                     if (!recordsToInsert.isEmpty()) {
-                        if (saveWithoutSharing != null && saveWithoutSharing) {
-                            sysDml.doUpsert(recordsToInsert);
-                        } else {
-                            upsert recordsToInsert;
-                        }
+                        if (saveWithoutSharing != null && saveWithoutSharing) sysDml.doUpsert(recordsToInsert);
+                        else upsert recordsToInsert;
+                        
+                        for (SObject rec : recordsToInsert) allInsertedChildIds.add((String)rec.Id);
                     }
                 }
                 else if (rawChildData instanceof Map<String, Object>) {
@@ -665,21 +624,18 @@ public with sharing class DynamicFormController {
                             childRec.Id = (Id)String.valueOf(itemMap.get('id')).replaceAll('[^a-zA-Z0-9]', ''); 
                             isUpdate = true; 
                         }
-                        if (!isUpdate && childRec.get(lookupField) == null) {
-                            childRec.put(lookupField, parentRec.Id);
-                        }
+                        if (!isUpdate && childRec.get(lookupField) == null) childRec.put(lookupField, parentRec.Id);
                         
-                        if (saveWithoutSharing != null && saveWithoutSharing) {
-                            sysDml.doUpsert(childRec);
-                        } else {
-                            upsert childRec;
-                        }
+                        if (saveWithoutSharing != null && saveWithoutSharing) sysDml.doUpsert(childRec);
+                        else upsert childRec;
                         
                         createdChildIds.put(objName, childRec.Id);
+                        allInsertedChildIds.add((String)childRec.Id); 
                     }
                 }
             }
             response.put('childIds', createdChildIds);
+            response.put('allInsertedChildIds', allInsertedChildIds); 
             return response;
 
         } catch (Exception e) { 
@@ -688,18 +644,22 @@ public with sharing class DynamicFormController {
         }
     }
 
+    // *** FIX: Enabled SaveWithoutSharing DML override for standalone file/record deletions ***
     @AuraEnabled
-    public static void deleteRecord(String recordId) {
-        if (String.isBlank(recordId)) {
-            return;
-        }
+    public static void deleteRecord(String recordId, Boolean saveWithoutSharing) {
+        if (String.isBlank(recordId)) return;
         try { 
             String cleanId = recordId.replaceAll('[^a-zA-Z0-9]', '');
             if (cleanId.length() >= 15) {
                 Id recId = (Id)cleanId; 
                 Schema.SObjectType sType = recId.getSObjectType();
                 if (sType != null) {
-                    Database.delete(sType.newSObject(recId)); 
+                    SObject recToDelete = sType.newSObject(recId);
+                    if (saveWithoutSharing != null && saveWithoutSharing) {
+                        new SystemModeDML().doDelete(new List<SObject>{recToDelete});
+                    } else {
+                        Database.delete(recToDelete); 
+                    }
                 }
             }
         } catch (Exception e) { 
@@ -707,34 +667,66 @@ public with sharing class DynamicFormController {
         }
     }
 
-    // *** NEW: Explicit Rollback Method to prevent false-positive deletions ***
+    // *** FIX: Enabled SaveWithoutSharing DML override for Rollback Sequences ***
     @AuraEnabled
-    public static void rollbackTransaction(String recordId) {
-        if (String.isNotBlank(recordId)) {
-            try {
-                String cleanId = recordId.replaceAll('[^a-zA-Z0-9]', '');
-                if (cleanId.length() >= 15) {
-                    Id recId = (Id)cleanId;
-                    Schema.SObjectType sType = recId.getSObjectType();
-                    if (sType != null) {
-                        Database.delete(sType.newSObject(recId));
+    public static void rollbackTransaction(String recordId, List<String> childIds, Boolean saveWithoutSharing) {
+        List<SObject> childRecordsToDelete = new List<SObject>();
+        List<SObject> parentRecordToDelete = new List<SObject>();
+
+        if (childIds != null && !childIds.isEmpty()) {
+            for (String cId : childIds) {
+                if (String.isNotBlank(cId)) {
+                    String cleanId = cId.replaceAll('[^a-zA-Z0-9]', '');
+                    if (cleanId.length() >= 15) {
+                        try {
+                            Id parsedId = (Id)cleanId;
+                            childRecordsToDelete.add(parsedId.getSObjectType().newSObject(parsedId));
+                        } catch (Exception e) {}
                     }
                 }
-            } catch (Exception e) {
-                System.debug('Error rolling back transactional save: ' + e.getMessage());
             }
+        }
+
+        if (String.isNotBlank(recordId)) {
+            String cleanId = recordId.replaceAll('[^a-zA-Z0-9]', '');
+            if (cleanId.length() >= 15) {
+                try {
+                    Id parsedId = (Id)cleanId;
+                    parentRecordToDelete.add(parsedId.getSObjectType().newSObject(parsedId));
+                } catch (Exception e) {}
+            }
+        }
+
+        try {
+            SystemModeDML sysDml = new SystemModeDML();
+            if (!childRecordsToDelete.isEmpty()) {
+                if (saveWithoutSharing != null && saveWithoutSharing) sysDml.doDelete(childRecordsToDelete, false);
+                else Database.delete(childRecordsToDelete, false);
+            }
+            if (!parentRecordToDelete.isEmpty()) {
+                if (saveWithoutSharing != null && saveWithoutSharing) sysDml.doDelete(parentRecordToDelete, false);
+                else Database.delete(parentRecordToDelete, false);
+            }
+        } catch (Exception e) {
+            System.debug('Error rolling back transactional save: ' + e.getMessage());
         }
     }
 
+    // *** FIX: Enabled SaveWithoutSharing DML override for File Uploads ***
     @AuraEnabled
-    public static Id uploadFile(String parentId, String fileName, String base64Data) {
+    public static Id uploadFile(String parentId, String fileName, String base64Data, Boolean saveWithoutSharing) {
         try {
             ContentVersion cv = new ContentVersion();
             cv.VersionData = EncodingUtil.base64Decode(base64Data);
             cv.Title = fileName;
             cv.PathOnClient = fileName;
             cv.FirstPublishLocationId = parentId; 
-            insert cv;
+            
+            if (saveWithoutSharing != null && saveWithoutSharing) {
+                new SystemModeDML().doInsert(cv);
+            } else {
+                insert cv;
+            }
             
             ContentVersion insertedCv = [SELECT ContentDocumentId FROM ContentVersion WHERE Id = :cv.Id LIMIT 1];
             return insertedCv.ContentDocumentId;
@@ -745,36 +737,19 @@ public with sharing class DynamicFormController {
     }
 
     private static String getCleanErrorMessage(Exception e) {
-        if (e instanceof System.DmlException) {
-            return ((System.DmlException)e).getDmlMessage(0);
-        }
-
+        if (e instanceof System.DmlException) return ((System.DmlException)e).getDmlMessage(0);
         String errorMsg = e.getMessage();
-
-        if (errorMsg.contains('FIELD_CUSTOM_VALIDATION_EXCEPTION')) {
-            errorMsg = errorMsg.substringAfter('FIELD_CUSTOM_VALIDATION_EXCEPTION, ');
-            errorMsg = errorMsg.substringBefore(': [');
-        } else if (errorMsg.contains('INSUFFICIENT_ACCESS_ON_CROSS_REFERENCE_ENTITY') || errorMsg.contains('INSUFFICIENT_ACCESS')) {
-            errorMsg = 'You do not have permission to access or modify this record.';
-        } else if (errorMsg.contains('DUPLICATE_VALUE')) {
-            errorMsg = 'A record with this information already exists.';
-        } else if (errorMsg.contains('REQUIRED_FIELD_MISSING')) {
-            errorMsg = 'Please fill out all required fields: ' + errorMsg.substringAfter('REQUIRED_FIELD_MISSING, ').substringBefore(':');
-        } else {
-            if(errorMsg.contains('Class.')) {
-                errorMsg = errorMsg.substringBefore('Class.');
-            }
-        }
-        
+        if (errorMsg.contains('FIELD_CUSTOM_VALIDATION_EXCEPTION')) errorMsg = errorMsg.substringAfter('FIELD_CUSTOM_VALIDATION_EXCEPTION, ').substringBefore(': [');
+        else if (errorMsg.contains('INSUFFICIENT_ACCESS')) errorMsg = 'You do not have permission to access or modify this record.';
+        else if (errorMsg.contains('DUPLICATE_VALUE')) errorMsg = 'A record with this information already exists.';
+        else if (errorMsg.contains('REQUIRED_FIELD_MISSING')) errorMsg = 'Please fill out all required fields: ' + errorMsg.substringAfter('REQUIRED_FIELD_MISSING, ').substringBefore(':');
+        else if (errorMsg.contains('Class.')) errorMsg = errorMsg.substringBefore('Class.');
         return errorMsg.trim();
     }
 
-
     private static void processPicklistLogic(Form_Field__mdt f, FieldWrapper fw, Map<String, SObjectField> describeMap, String recordTypeId, String rootObjectApiName) {
         if (String.isNotBlank(f.Override_Picklist_Values__c)) { 
-            for (String val : f.Override_Picklist_Values__c.split(',')) { 
-                fw.picklistOptions.add(new Map<String, String>{'label'=>val.trim(), 'value'=>val.trim()}); 
-            } 
+            for (String val : f.Override_Picklist_Values__c.split(',')) { fw.picklistOptions.add(new Map<String, String>{'label'=>val.trim(), 'value'=>val.trim()}); } 
         }
         if (String.isNotBlank(f.Override_Dependency_JSON__c)) {
             Map<String, Object> raw = (Map<String, Object>)JSON.deserializeUntyped(f.Override_Dependency_JSON__c);
@@ -798,17 +773,11 @@ public with sharing class DynamicFormController {
                 try {
                     if(!Test.isRunningTest()) {
                         ConnectApi.PicklistValuesCollection rtValues = ConnectApi.RecordUi.getPicklistValuesByRecordType(fw.targetObject, recordTypeId);
-                        
                         if (rtValues != null && rtValues.picklistFieldValues != null) {
                             ConnectApi.PicklistValues fieldValues = null;
-                            
                             for (String fieldKey : rtValues.picklistFieldValues.keySet()) {
-                                if (fieldKey.equalsIgnoreCase(fw.apiName)) {
-                                    fieldValues = rtValues.picklistFieldValues.get(fieldKey);
-                                    break;
-                                }
+                                if (fieldKey.equalsIgnoreCase(fw.apiName)) { fieldValues = rtValues.picklistFieldValues.get(fieldKey); break; }
                             }
-                            
                             if (fieldValues != null && fieldValues.values != null) {
                                 for (ConnectApi.PicklistValue pv : fieldValues.values) {
                                     fw.picklistOptions.add(new Map<String, String>{'label' => pv.label, 'value' => pv.value});
@@ -818,10 +787,7 @@ public with sharing class DynamicFormController {
                             }
                         }
                     }
-                } catch (Exception e) {
-                    System.debug('RecordType Picklist Fetch Failed. Falling back to Schema: ' + e.getMessage());
-                    fetchSuccess = false;
-                }
+                } catch (Exception e) {}
             }
 
             if (!fetchSuccess) {
@@ -835,14 +801,11 @@ public with sharing class DynamicFormController {
             
             if (String.isNotBlank(f.Controller_Field__c)) {
                 fw.dependencyMap = PicklistDependencyHelper.getSerializedDependencyMap(fieldToken);
-                
                 if (fetchSuccess && !allowedValues.isEmpty()) {
                     for (String ctrlVal : fw.dependencyMap.keySet()) {
                         List<Map<String, String>> filteredDeps = new List<Map<String, String>>();
                         for (Map<String, String> depOpt : fw.dependencyMap.get(ctrlVal)) {
-                            if (allowedValues.contains(depOpt.get('value'))) {
-                                filteredDeps.add(depOpt);
-                            }
+                            if (allowedValues.contains(depOpt.get('value'))) { filteredDeps.add(depOpt); }
                         }
                         fw.dependencyMap.put(ctrlVal, filteredDeps);
                     }
@@ -861,10 +824,7 @@ public with sharing class DynamicFormController {
                 Boolean safe = true;
                 for(Integer i=0; i<parts.size()-1; i++) { 
                     current = current.getSObject(parts[i]); 
-                    if(current == null) { 
-                        safe = false; 
-                        break; 
-                    } 
+                    if(current == null) { safe = false; break; } 
                 }
                 if(safe) { 
                     Object val = current.get(parts[parts.size()-1]); 
@@ -876,29 +836,21 @@ public with sharing class DynamicFormController {
     }
 
     private static String getRelationshipField(String apiName) {
-        if (apiName.endsWithIgnoreCase('Id')) {
-            return apiName.substring(0, apiName.length()-2);
-        }
-        if (apiName.endsWithIgnoreCase('__c')) {
-            return apiName.substring(0, apiName.length()-3) + '__r';
-        }
+        if (apiName.endsWithIgnoreCase('Id')) return apiName.substring(0, apiName.length()-2);
+        if (apiName.endsWithIgnoreCase('__c')) return apiName.substring(0, apiName.length()-3) + '__r';
         return apiName;
     }
 
     private static SObject createSObject(String objName, Map<String, Object> data) {
-        if (String.isBlank(objName) || data == null) {
-            return null;
-        }
+        if (String.isBlank(objName) || data == null) return null;
         Schema.SObjectType targetType = Schema.getGlobalDescribe().get(objName);
-        if (targetType == null) {
-            return null;
-        }
+        if (targetType == null) return null;
+        
         SObject obj = targetType.newSObject();
         Map<String, SObjectField> fieldMap = targetType.getDescribe().fields.getMap();
         Map<String, SObjectField> lowerFieldMap = new Map<String, SObjectField>();
-        for(String fName : fieldMap.keySet()) {
-            lowerFieldMap.put(fName.toLowerCase(), fieldMap.get(fName));
-        }
+        for(String fName : fieldMap.keySet()) lowerFieldMap.put(fName.toLowerCase(), fieldMap.get(fName));
+        
         for (String key : data.keySet()) {
             String lowerKey = key.toLowerCase();
             if (lowerFieldMap.containsKey(lowerKey)) {
@@ -907,36 +859,23 @@ public with sharing class DynamicFormController {
                 
                 if (f.getDescribe().isCreateable() || f.getDescribe().isUpdateable()) {
                     if (val == null || String.valueOf(val).trim() == '') {
-                        if (f.getDescribe().isNillable()) {
-                            obj.put(f, null); 
-                        }
+                        if (f.getDescribe().isNillable()) obj.put(f, null); 
                     } else {
                         DisplayType t = f.getDescribe().getType();
                         String valString = String.valueOf(val).trim();
-                        if (t == DisplayType.DOUBLE || t == DisplayType.CURRENCY || t == DisplayType.PERCENT) {
-                            obj.put(f, Double.valueOf(valString));
-                        } else if (t == DisplayType.INTEGER) {
-                            obj.put(f, Integer.valueOf(valString));
-                        } else if (t == DisplayType.DATE) {
-                            obj.put(f, Date.valueOf(valString));
-                        } else if (t == DisplayType.DATETIME) {
-                            if (valString.contains('T') || valString.contains('Z')) {
-                                obj.put(f, (Datetime)JSON.deserialize('"' + valString + '"', Datetime.class));
-                            } else {
-                                obj.put(f, Datetime.valueOf(valString));
-                            }
-                        } else if (t == DisplayType.BOOLEAN) {
-                            obj.put(f, Boolean.valueOf(valString));
-                        } else if (t == DisplayType.REFERENCE || t == DisplayType.ID) {
+                        if (t == DisplayType.DOUBLE || t == DisplayType.CURRENCY || t == DisplayType.PERCENT) obj.put(f, Double.valueOf(valString));
+                        else if (t == DisplayType.INTEGER) obj.put(f, Integer.valueOf(valString));
+                        else if (t == DisplayType.DATE) obj.put(f, Date.valueOf(valString));
+                        else if (t == DisplayType.DATETIME) {
+                            if (valString.contains('T') || valString.contains('Z')) obj.put(f, (Datetime)JSON.deserialize('"' + valString + '"', Datetime.class));
+                            else obj.put(f, Datetime.valueOf(valString));
+                        } 
+                        else if (t == DisplayType.BOOLEAN) obj.put(f, Boolean.valueOf(valString));
+                        else if (t == DisplayType.REFERENCE || t == DisplayType.ID) {
                             String cleanId = valString.replaceAll('[^a-zA-Z0-9]', '');
-                            if (cleanId.length() >= 15) {
-                                obj.put(f, (Id)cleanId);
-                            }
-                        } else if (t == DisplayType.TEXTAREA) {
-                            obj.put(f, valString);
-                        } else {
-                            obj.put(f, valString);
-                        }
+                            if (cleanId.length() >= 15) obj.put(f, (Id)cleanId);
+                        } 
+                        else obj.put(f, valString);
                     }
                 }
             }
@@ -944,16 +883,13 @@ public with sharing class DynamicFormController {
         return obj;
     }
 
+    // *** FIX: Inner class now supports Insert and allows AllOrNone flag for deletion ***
     @TestVisible
     private without sharing class SystemModeDML {
-        public void doUpsert(SObject record) {
-            upsert record;
-        }
-        public void doUpsert(List<SObject> records) {
-            upsert records;
-        }
-        public void doDelete(List<SObject> records) {
-            Database.delete(records);
-        }
+        public void doUpsert(SObject record) { upsert record; }
+        public void doUpsert(List<SObject> records) { upsert records; }
+        public void doDelete(List<SObject> records) { Database.delete(records); }
+        public void doDelete(List<SObject> records, Boolean allOrNone) { Database.delete(records, allOrNone); }
+        public void doInsert(SObject record) { insert record; }
     }
 }

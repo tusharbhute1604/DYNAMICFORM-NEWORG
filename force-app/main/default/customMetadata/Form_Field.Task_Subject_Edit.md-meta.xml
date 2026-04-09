@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-    <label>Appointment Time</label>
+    <label>Task Subject</label>
     <protected>false</protected>
     <values>
         <field>Controller_Field__c</field>
@@ -24,15 +24,15 @@
     </values>
     <values>
         <field>Field_API_Name__c</field>
-        <value xsi:type="xsd:string">Appointment_Time__c</value>
+        <value xsi:type="xsd:string">Subject</value>
     </values>
     <values>
         <field>Field_Type__c</field>
-        <value xsi:type="xsd:string">DateTime</value>
+        <value xsi:type="xsd:string">Picklist</value>
     </values>
     <values>
         <field>Form_Section__c</field>
-        <value xsi:type="xsd:string">Date_Date_Time</value>
+        <value xsi:type="xsd:string">Task_Details_Edit</value>
     </values>
     <values>
         <field>Formula_Logic__c</field>
@@ -64,7 +64,7 @@
     </values>
     <values>
         <field>Order__c</field>
-        <value xsi:type="xsd:double">2.0</value>
+        <value xsi:type="xsd:double">1.0</value>
     </values>
     <values>
         <field>Override_Dependency_JSON__c</field>
@@ -76,7 +76,7 @@
     </values>
     <values>
         <field>Override_Picklist_Values__c</field>
-        <value xsi:nil="true"/>
+        <value xsi:type="xsd:string">Service Request,Breakdown,Maintenance</value>
     </values>
     <values>
         <field>Prepopulate__c</field>
@@ -96,7 +96,7 @@
     </values>
     <values>
         <field>Required__c</field>
-        <value xsi:type="xsd:boolean">false</value>
+        <value xsi:type="xsd:boolean">true</value>
     </values>
     <values>
         <field>Save_To_Database__c</field>
@@ -116,12 +116,6 @@
     </values>
     <values>
         <field>Visibility_Logic__c</field>
-        <value xsi:type="xsd:string">{
-&quot;operator&quot;: &quot;AND&quot;,
-&quot;conditions&quot;: [
-{ &quot;when&quot;: &quot;Is_VIP__c&quot;, &quot;operator&quot;: &quot;equals&quot;, &quot;value&quot;: true },
-{ &quot;when&quot;: &quot;Sub_Category__c&quot;, &quot;operator&quot;: &quot;equals&quot;, &quot;value&quot;: &quot;Salesforce&quot; }
-]
-}</value>
+        <value xsi:nil="true"/>
     </values>
 </CustomMetadata>

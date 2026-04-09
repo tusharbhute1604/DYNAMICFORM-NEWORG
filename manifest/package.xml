@@ -26,6 +26,7 @@
     <types>
         <members>DynamicFormApp</members>
         <members>MaintenanceFormAuraWrapper</members>
+        <members>taskEditAura</members>
         <name>AuraDefinitionBundle</name>
     </types>
     <types>
@@ -56,6 +57,7 @@
         <members>Form_Config__mdt.Case_Intake</members>
         <members>Form_Config__mdt.Task_Intake</members>
         <members>Form_Config__mdt.Case_Quality_Score</members>
+        <members>Form_Config__mdt.Task_Edit</members>
         <members>Form_Section__mdt.General_Info</members>
         <members>Form_Section__mdt.Picklists</members>
         <members>Form_Section__mdt.Date_Date_Time</members>
@@ -66,6 +68,7 @@
         <members>Form_Section__mdt.Country_Service_Mapping</members>
         <members>Form_Section__mdt.Other_Details</members>
         <members>Form_Section__mdt.QC_Parameters</members>
+        <members>Form_Section__mdt.Task_Details_Edit</members>
         <members>Form_Field__mdt.Case_Priority</members>
         <members>Form_Field__mdt.Subject</members>
         <members>Form_Field__mdt.Is_VIP</members>
@@ -103,6 +106,13 @@
         <members>Form_Field_mdt.Cleanliness_Score</members>
         <members>Form_Field__mdt.Final_Audit_Grade</members>
         <members>Form_Field__mdt.Speed_Score</members>
+        <members>Form_Field__mdt.Task_Subject_Edit</members>
+        <members>Form_Field__mdt.Task_Status_Edit</members>
+        <members>Form_Field__mdt.Owner_Edit</members>
+        <members>Form_Field__mdt.Due_Date_Edit</members>
+        <members>Form_Field__mdt.Task_Priority_Edit</members>
+        <members>Form_Field__mdt.Case_Edit</members>
+        <members>Form_Field__mdt.Is_Maintenance_Task_Edit</members>
         <name>CustomMetadata</name>
     </types>
     <types>
@@ -111,6 +121,7 @@
         <members>Case.Create_Maintenance_Task</members>
         <members>Case.Edit_Case_Details</members>
         <members>Case.QC_Score</members>
+        <members>Task.Edit_Task</members>
         <name>QuickAction</name>
     </types>
     <version>66.0</version>

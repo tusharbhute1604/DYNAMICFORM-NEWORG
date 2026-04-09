@@ -1,0 +1,12 @@
+<template>
+    <template if:true={isReady}>
+        <c-dynamic-record-form
+            record-id={recordId}
+            object-api-name={objectApiName}
+            record-type-id={activeRecordTypeId} 
+            form-developer-name="Task_Edit"
+            form-mode="edit" 
+            onclose={handleClose}> 
+        </c-dynamic-record-form>
+    </template>
+</template>
