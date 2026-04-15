@@ -309,14 +309,35 @@ public with sharing class DynamicFormController {
     @AuraEnabled(cacheable=true)
     public static LookupRecordDetails getRecordDetails(String recordId, String objectApiName, String searchFields) {
         LookupRecordDetails result = new LookupRecordDetails();
-        if (String.isBlank(recordId)) return result;
+        if (String.isBlank(recordId)) {
+            return result;
+        }
         try {
+            // --- NEW: Self-Healing Object & Field Resolution ---
+            // If the CMDT is missing the target object, dynamically resolve it from the ID
+            if (String.isBlank(objectApiName) || objectApiName == 'null' || objectApiName == 'undefined') {
+                Id recId = (Id)recordId;
+                objectApiName = recId.getSObjectType().getDescribe().getName();
+            }
+            
+            if (String.isBlank(searchFields) || searchFields == 'null' || searchFields == 'undefined') {
+                searchFields = 'Name';
+            }
+            
+            // Edge case safeguard: Case object does not have a standard 'Name' field
+            if (objectApiName.equalsIgnoreCase('Case') && searchFields.equalsIgnoreCase('Name')) {
+                searchFields = 'CaseNumber';
+            }
+            // ---------------------------------------------------
+
             List<String> fieldList = searchFields.split(',');
             String query = 'SELECT ' + String.escapeSingleQuotes(searchFields) + ' FROM ' + String.escapeSingleQuotes(objectApiName) + ' WHERE Id = :recordId LIMIT 1';
             SObject rec = Database.query(query);
+            
             String primaryField = fieldList[0].trim();
             result.id = recordId;
             result.label = (String)rec.get(primaryField);
+            
             if (fieldList.size() > 1) {
                 List<String> detailLines = new List<String>();
                 for (Integer i = 1; i < fieldList.size(); i++) {
@@ -327,11 +348,15 @@ public with sharing class DynamicFormController {
                         detailLines.add(fName + ': ' + displayVal); 
                     } catch (Exception e) {}
                 }
-                if (!detailLines.isEmpty()) result.details = String.join(detailLines, '\n');
+                if (!detailLines.isEmpty()) {
+                    result.details = String.join(detailLines, '\n');
+                }
             }
         } catch (Exception e) { 
+            // Fallback: If query fails, output the raw ID to prevent UI crashing
             result.id = recordId; 
             result.label = recordId; 
+            System.debug('getRecordDetails Error: ' + e.getMessage());
         }
         return result;
     }

@@ -419,7 +419,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             
             setTimeout(() => { 
                 try {
-                    this.calculateFormulas(); 
+                    // *** FIX: Pass true to indicate this is the Initial Load sweep ***
+                    this.calculateFormulas(true); 
                     this.evaluateVisibility(); 
                     this.applyMatrixRules(); 
                     this.fetchDependentData(); 
@@ -428,7 +429,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     for (let uuid in this.sectionData) {
                         for (let fieldApi in this.sectionData[uuid]) {
                             if (this.sectionData[uuid][fieldApi]) {
-                                this.evaluateDynamicQueries(fieldApi, uuid);
+                                // *** FIX: Pass true to indicate Initial Load ***
+                                this.evaluateDynamicQueries(fieldApi, uuid, true);
                             }
                         }
                     }
@@ -463,18 +465,37 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             for (let row of sec.rows) {
                 for (let field of row.fields) {
                     const recId = this.sectionData[row.id] ? this.sectionData[row.id][field.apiName] : null;
-                    if (field.isLookup && recId && !field.currentDetails && field.lookupSearchField && field.lookupSearchField.includes(',')) {
-                        getRecordDetails({ 
-                            recordId: recId, 
-                            objectApiName: field.lookupTargetObject, 
-                            searchFields: field.lookupSearchField 
-                        })
-                        .then(res => {
-                            if (res && res.details) {
-                                this.updateFieldState(row.id, field.apiName, { currentDetails: res.details });
+                    
+                    if (field.isLookup && recId) {
+                        const needsLabel = (field.currentValue === recId);
+                        const needsDetails = (!field.currentDetails && field.lookupSearchField && field.lookupSearchField.includes(','));
+                        
+                        if (needsLabel || needsDetails) {
+                            if (needsLabel) {
+                                this.updateFieldState(row.id, field.apiName, { currentValue: 'Resolving...' });
                             }
-                        })
-                        .catch(err => {});
+                            
+                            getRecordDetails({ 
+                                recordId: recId, 
+                                objectApiName: field.lookupTargetObject, 
+                                searchFields: field.lookupSearchField || 'Name' 
+                            })
+                            .then(res => {
+                                if (res) {
+                                    let updates = {};
+                                    if (needsLabel && res.label) updates.currentValue = res.label;
+                                    else if (needsLabel && !res.label) updates.currentValue = recId;
+                                    
+                                    if (res.details) updates.currentDetails = res.details;
+                                    this.updateFieldState(row.id, field.apiName, updates);
+                                }
+                            })
+                            .catch(err => {
+                                if (needsLabel) {
+                                    this.updateFieldState(row.id, field.apiName, { currentValue: recId });
+                                }
+                            });
+                        }
                     }
                 }
             }
@@ -868,13 +889,20 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
-    evaluateDynamicQueries(changedFieldApi, rowId) {
+    // *** FIX: Added isInitialLoad flag to respect CMDT Fetch_On_Edit__c
+    evaluateDynamicQueries(changedFieldApi, rowId, isInitialLoad = false) {
         if (!this._activeSoqlQueries) this._activeSoqlQueries = {};
         for (let sec of this.sections) {
             if (!sec.rows) continue;
             for (let row of sec.rows) {
                 for (let f of row.fields) {
                     if (f.dynamicSoql && f.soqlDependencies && f.soqlDependencies.includes(changedFieldApi)) {
+                        
+                        // *** NEW: Check the Fetch_On_Edit__c flag during form load sweep
+                        if (isInitialLoad && this.isEditMode && !f.fetchOnEdit) {
+                            continue; // Skip the SOQL overwrite!
+                        }
+
                         this.executeSingleDynamicQuery(f, row.id);
                     }
                 }
@@ -904,7 +932,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             let emptyVal = field.isMultiSelect ? [] : (field.isCheckbox ? false : '');
             if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== emptyVal) {
                 this.sectionData[rowId][field.apiName] = emptyVal;
-                this.updateFieldState(rowId, field.apiName, { currentValue: emptyVal });
+                this.updateFieldState(rowId, field.apiName, { currentValue: emptyVal, currentDetails: '' });
                 this.calculateFormulas();
                 this.evaluateVisibility();
             }
@@ -940,12 +968,41 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 
                 if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== newValue) {
                     this.sectionData[rowId][field.apiName] = newValue;
-                    this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
+                    
+                    if (field.isLookup && newValue) {
+                        this.updateFieldState(rowId, field.apiName, { currentValue: 'Resolving...' });
+                        
+                        getRecordDetails({ 
+                            recordId: newValue, 
+                            objectApiName: field.lookupTargetObject, 
+                            searchFields: field.lookupSearchField || 'Name' 
+                        })
+                        .then(res => {
+                            if (res && res.label) {
+                                this.updateFieldState(rowId, field.apiName, { 
+                                    currentValue: res.label, 
+                                    currentDetails: res.details || '' 
+                                });
+                            } else {
+                                this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
+                            }
+                        })
+                        .catch(() => {
+                            this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
+                        });
+                    } else {
+                        this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
+                    }
+
                     this.filterDependencies(rowId, field.apiName, newValue);
                     this.calculateFormulas();
                     this.evaluateVisibility();
                     this.applyMatrixRules();
                     this.evaluateDynamicQueries(field.apiName, rowId); 
+                    
+                    if (field.isLookup) {
+                        this.handleReactiveContextChange(field.apiName, newValue);
+                    }
                 }
             })
             .catch(err => {
@@ -983,7 +1040,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
-    calculateFormulas() {
+    // *** FIX: Pass isInitialLoad to formulas so we can accurately pass it down the chain
+    calculateFormulas(isInitialLoad = false) {
+        let triggeredFormulas = []; 
+
         for (let sec of this.sections) {
             if (!sec.rows) continue;
             for (let row of sec.rows) {
@@ -1009,151 +1069,212 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             
                             if (rowData[f.apiName] !== result) {
                                 rowData[f.apiName] = result;
+                                triggeredFormulas.push({ apiName: f.apiName, rowId: row.id });
                             }
                         } catch (err) {}
                     }
                 }
             }
         }
+
+        if (triggeredFormulas.length > 0) {
+            triggeredFormulas.forEach(formula => {
+                this.evaluateDynamicQueries(formula.apiName, formula.rowId, isInitialLoad);
+            });
+        }
     }
 
     evaluateVisibility() {
         let forceSectionRepaint = false;
+        let isStabilized = false;
+        let loopCount = 0;
 
-        for (let i = 0; i < this.sections.length; i++) {
-            let sec = this.sections[i];
-            let secChanged = false;
+        do {
+            isStabilized = true;
+            loopCount++;
             
-            let isLogicallyVisible = true;
-            if (sec.visibilityLogic) {
-                try {
-                    const logic = JSON.parse(sec.visibilityLogic);
-                    isLogicallyVisible = Boolean(this.checkLogic(logic, null, true)); 
-                } catch (e) {}
-            }
-            const hasUpload = sec.rows && sec.rows.some(row => row.fields && row.fields.some(f => f.isFileUpload));
-            if (hasUpload && !this.savedRecordId) { isLogicallyVisible = false; }
-            
-            if (sec.isLogicallyVisible !== isLogicallyVisible) {
-                sec.isLogicallyVisible = isLogicallyVisible;
-                secChanged = true;
+            if (loopCount > 10) {
+                console.warn('Dynamic Form: Visibility evaluation hit stabilization loop limit.');
+                break;
             }
 
-            let isWizardVisible = true;
-            if (this.isWizardMode) { isWizardVisible = (i === this.currentStepIndex); }
-            
-            let finalSecVisible = Boolean(sec.isLogicallyVisible && isWizardVisible); 
+            let dataWipedThisPass = false;
 
-            if (this.isSubmitHidden) {
-                sec.isLogicallyVisible = Boolean(hasUpload);
-                finalSecVisible = Boolean(hasUpload);
-                if (hasUpload && !sec.isExpanded) {
-                    sec.isExpanded = true;
-                    secChanged = true;
-                }
-            }
-
-            if (sec.isVisible !== finalSecVisible) {
-                sec.isVisible = finalSecVisible;
-                secChanged = true;
-            }
-
-            let baseClass = sec.isExpanded ? 'slds-section slds-is-open slds-m-bottom_medium' : 'slds-section slds-m-bottom_medium';
-            if (!sec.isVisible) baseClass += ' slds-hide';
-            
-            if (sec.sectionClass !== baseClass) {
-                sec.sectionClass = baseClass;
-                secChanged = true;
-            }
-
-            if (sec.rows) {
-                let rowsChanged = false;
-                for (let rIndex = 0; rIndex < sec.rows.length; rIndex++) {
-                    let row = sec.rows[rIndex];
-                    let fieldsChanged = false;
-
-                    for (let f of row.fields) {
-                        
-                        let syncedValue = f.currentValue; 
-                        if (!f.isLookup && !f.isFileUpload) {
-                            if (this.sectionData[row.id] && this.sectionData[row.id].hasOwnProperty(f.apiName)) {
-                                let storedVal = this.sectionData[row.id][f.apiName];
-                                if (f.isMultiSelect && typeof storedVal === 'string') { 
-                                    syncedValue = storedVal ? storedVal.split(';') : []; 
-                                } else { 
-                                    syncedValue = storedVal; 
-                                }
-                            }
-                        }
-                        
-                        if (syncedValue === undefined || syncedValue === null) {
-                            syncedValue = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
-                        }
-
-                        if (f.isMultiSelect) {
-                            if (JSON.stringify(f.currentValue) !== JSON.stringify(syncedValue)) {
-                                f.currentValue = syncedValue;
-                                fieldsChanged = true;
-                            }
-                        } else {
-                            if (f.currentValue !== syncedValue) {
-                                f.currentValue = syncedValue;
-                                fieldsChanged = true;
-                            }
-                        }
-                        
-                        let isFieldVisible = true;
-                        if (f.visibilityLogic) {
-                            try {
-                                const logic = JSON.parse(f.visibilityLogic);
-                                isFieldVisible = Boolean(this.checkLogic(logic, this.sectionData[row.id], false));
-                            } catch (e) {}
-                        }
-
-                        if (sec.allowMultiple && rIndex > 0 && f.isDisplayText) {
-                            isFieldVisible = false;
-                        }
-                        
-                        if (f.isVisible !== isFieldVisible) {
-                            f.isVisible = isFieldVisible;
-                            fieldsChanged = true;
-                        }
-                        
-                        const newDisplayClass = isFieldVisible ? '' : 'slds-hide';
-                        if (f.cssDisplayClass !== newDisplayClass) {
-                            f.cssDisplayClass = newDisplayClass;
-                            fieldsChanged = true;
-                        }
-
-                        let isFieldRequired = Boolean(f.isStaticRequired); 
-                        if (f.requiredLogic) {
-                            try {
-                                const reqLogic = JSON.parse(f.requiredLogic);
-                                isFieldRequired = isFieldRequired || Boolean(this.checkLogic(reqLogic, this.sectionData[row.id], false));
-                            } catch (e) {}
-                        }
-                        
-                        const finalRequired = Boolean(isFieldVisible && sec.isLogicallyVisible) ? isFieldRequired : false;
-                        if (f.required !== finalRequired) {
-                            f.required = finalRequired;
-                            fieldsChanged = true;
-                        }
-                    }
-
-                    if (fieldsChanged) {
-                        row.fields = [...row.fields];
-                        rowsChanged = true;
-                    }
+            for (let i = 0; i < this.sections.length; i++) {
+                let sec = this.sections[i];
+                let secChanged = false;
+                
+                let isLogicallyVisible = true;
+                if (sec.visibilityLogic) {
+                    try {
+                        const logic = JSON.parse(sec.visibilityLogic);
+                        isLogicallyVisible = Boolean(this.checkLogic(logic, null, true)); 
+                    } catch (e) {}
                 }
                 
-                if (rowsChanged || secChanged) {
-                    sec.rows = [...sec.rows];
+                const hasUpload = sec.rows && sec.rows.some(row => row.fields && row.fields.some(f => f.isFileUpload));
+                if (hasUpload && !this.savedRecordId) { isLogicallyVisible = false; }
+                
+                if (sec.isLogicallyVisible !== isLogicallyVisible) {
+                    sec.isLogicallyVisible = isLogicallyVisible;
+                    secChanged = true;
+                    isStabilized = false; 
+                }
+
+                let isWizardVisible = true;
+                if (this.isWizardMode) { isWizardVisible = (i === this.currentStepIndex); }
+                
+                let finalSecVisible = Boolean(sec.isLogicallyVisible && isWizardVisible); 
+
+                if (this.isSubmitHidden) {
+                    sec.isLogicallyVisible = Boolean(hasUpload);
+                    finalSecVisible = Boolean(hasUpload);
+                    if (hasUpload && !sec.isExpanded) {
+                        sec.isExpanded = true;
+                        secChanged = true;
+                        isStabilized = false;
+                    }
+                }
+
+                if (sec.isVisible !== finalSecVisible) {
+                    sec.isVisible = finalSecVisible;
+                    secChanged = true;
+                    isStabilized = false;
+                }
+
+                let baseClass = sec.isExpanded ? 'slds-section slds-is-open slds-m-bottom_medium' : 'slds-section slds-m-bottom_medium';
+                if (!sec.isVisible) baseClass += ' slds-hide';
+                
+                if (sec.sectionClass !== baseClass) {
+                    sec.sectionClass = baseClass;
+                    secChanged = true;
+                }
+
+                if (sec.rows) {
+                    let rowsChanged = false;
+                    for (let rIndex = 0; rIndex < sec.rows.length; rIndex++) {
+                        let row = sec.rows[rIndex];
+                        let fieldsChanged = false;
+
+                        for (let f of row.fields) {
+                            
+                            let syncedValue = f.currentValue; 
+                            if (!f.isLookup && !f.isFileUpload) {
+                                if (this.sectionData[row.id] && this.sectionData[row.id].hasOwnProperty(f.apiName)) {
+                                    let storedVal = this.sectionData[row.id][f.apiName];
+                                    if (f.isMultiSelect && typeof storedVal === 'string') { 
+                                        syncedValue = storedVal ? storedVal.split(';') : []; 
+                                    } else { 
+                                        syncedValue = storedVal; 
+                                    }
+                                }
+                            }
+                            
+                            if (syncedValue === undefined || syncedValue === null) {
+                                syncedValue = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
+                            }
+
+                            if (f.isMultiSelect) {
+                                if (JSON.stringify(f.currentValue) !== JSON.stringify(syncedValue)) {
+                                    f.currentValue = syncedValue;
+                                    fieldsChanged = true;
+                                }
+                            } else {
+                                if (f.currentValue !== syncedValue) {
+                                    f.currentValue = syncedValue;
+                                    fieldsChanged = true;
+                                }
+                            }
+                            
+                            let isFieldLogicVisible = true;
+                            if (f.visibilityLogic) {
+                                try {
+                                    const logic = JSON.parse(f.visibilityLogic);
+                                    isFieldLogicVisible = Boolean(this.checkLogic(logic, this.sectionData[row.id], false));
+                                } catch (e) {}
+                            }
+
+                            if (sec.allowMultiple && rIndex > 0 && f.isDisplayText) {
+                                isFieldLogicVisible = false;
+                            }
+                            
+                            const finalFieldLogicallyVisible = Boolean(isFieldLogicVisible && sec.isLogicallyVisible);
+                            
+                            if (f.isVisible !== finalFieldLogicallyVisible) {
+                                f.isVisible = finalFieldLogicallyVisible;
+                                fieldsChanged = true;
+                                isStabilized = false;
+                            }
+                            
+                            const newDisplayClass = finalFieldLogicallyVisible ? '' : 'slds-hide';
+                            if (f.cssDisplayClass !== newDisplayClass) {
+                                f.cssDisplayClass = newDisplayClass;
+                                fieldsChanged = true;
+                                isStabilized = false;
+                            }
+
+                            if (!finalFieldLogicallyVisible) {
+                                const emptyVal = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
+                                let currentDataVal = this.sectionData[row.id] ? this.sectionData[row.id][f.apiName] : undefined;
+                                
+                                let needsWipe = false;
+                                if (f.isMultiSelect) {
+                                    if (Array.isArray(currentDataVal) && currentDataVal.length > 0) needsWipe = true;
+                                    else if (typeof currentDataVal === 'string' && currentDataVal !== '') needsWipe = true;
+                                } else {
+                                    if (currentDataVal !== emptyVal && currentDataVal !== undefined) needsWipe = true;
+                                }
+
+                                if (needsWipe) {
+                                    this.sectionData[row.id][f.apiName] = emptyVal;
+                                    f.currentValue = emptyVal;
+                                    
+                                    if (f.isLookup) {
+                                        f.currentDetails = '';
+                                    }
+                                    
+                                    fieldsChanged = true;
+                                    isStabilized = false; 
+                                    dataWipedThisPass = true;
+                                }
+                            }
+
+                            let isFieldRequired = Boolean(f.isStaticRequired); 
+                            if (f.requiredLogic) {
+                                try {
+                                    const reqLogic = JSON.parse(f.requiredLogic);
+                                    isFieldRequired = isFieldRequired || Boolean(this.checkLogic(reqLogic, this.sectionData[row.id], false));
+                                } catch (e) {}
+                            }
+                            
+                            const finalRequired = Boolean(finalFieldLogicallyVisible) ? isFieldRequired : false;
+                            if (f.required !== finalRequired) {
+                                f.required = finalRequired;
+                                fieldsChanged = true;
+                                isStabilized = false;
+                            }
+                        }
+
+                        if (fieldsChanged) {
+                            row.fields = [...row.fields];
+                            rowsChanged = true;
+                        }
+                    }
+                    
+                    if (rowsChanged || secChanged) {
+                        sec.rows = [...sec.rows];
+                        forceSectionRepaint = true;
+                    }
+                } else if (secChanged) {
                     forceSectionRepaint = true;
                 }
-            } else if (secChanged) {
-                forceSectionRepaint = true;
             }
-        }
+
+            if (dataWipedThisPass) {
+                this.calculateFormulas();
+            }
+
+        } while (!isStabilized);
 
         if (forceSectionRepaint) {
             this.sections = [...this.sections];
@@ -1246,7 +1367,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
         if (isSafeToRollback) { 
             this.isLoading = true; 
-            // *** FIX: Added this.saveWithoutSharing to rollback call ***
             rollbackTransaction({ 
                 recordId: this.savedRecordId,
                 childIds: this._rollbackChildIds,
@@ -1361,6 +1481,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     currentValue: emptyVal,
                     currentDetails: ''
                 });
+                
+                this.evaluateDynamicQueries(dep.field.apiName, dep.rowId);
             });
             this.evaluateVisibility();
             this.calculateFormulas();
@@ -1386,6 +1508,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             currentValue: fetchedInfo.label || fetchedInfo.value,
                             currentDetails: '' 
                         });
+
+                        this.evaluateDynamicQueries(f.apiName, dep.rowId);
                     }
                 });
                 this.evaluateVisibility();
@@ -1538,7 +1662,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 let reader = new FileReader();
                 reader.onload = () => {
                     let base64 = reader.result.split(',')[1];
-                    // *** FIX: Passed this.saveWithoutSharing to File Uploads ***
                     uploadFile({ 
                         parentId: this.savedRecordId, 
                         fileName: file.name, 
@@ -1612,7 +1735,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         const fieldApi = event.target.dataset.api;
         this.isLoading = true;
         
-        // *** FIX: Passed this.saveWithoutSharing to individual deletions ***
         deleteRecord({ 
             recordId: docId,
             saveWithoutSharing: this.saveWithoutSharing 
@@ -2186,7 +2308,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             
             if (!this.isEditMode && this.savedRecordId && this._isSaveCommitted) {
                 this.isLoading = true;
-                // *** FIX: Added this.saveWithoutSharing to rollback catch block ***
                 rollbackTransaction({ 
                     recordId: this.savedRecordId,
                     childIds: this._rollbackChildIds,

@@ -51,6 +51,7 @@
         <members>Matrix_Data__c</members>
         <members>Case</members>
         <members>Product2</members>
+        <members>Service_Request__c</members>
         <name>CustomObject</name>
     </types>
     <types>
@@ -69,6 +70,7 @@
         <members>Form_Section__mdt.Other_Details</members>
         <members>Form_Section__mdt.QC_Parameters</members>
         <members>Form_Section__mdt.Task_Details_Edit</members>
+        <members>Form_Section__mdt.Service_Requests</members>
         <members>Form_Field__mdt.Case_Priority</members>
         <members>Form_Field__mdt.Subject</members>
         <members>Form_Field__mdt.Is_VIP</members>
@@ -113,6 +115,10 @@
         <members>Form_Field__mdt.Task_Priority_Edit</members>
         <members>Form_Field__mdt.Case_Edit</members>
         <members>Form_Field__mdt.Is_Maintenance_Task_Edit</members>
+        <members>Form_Field__mdt.Cost</members>
+        <members>Form_Field__mdt.Request_Date</members>
+        <members>Form_Field__mdt.Service_Status</members>
+        <members>Form_Field__mdt.Opp_Grade_Case</members>
         <name>CustomMetadata</name>
     </types>
     <types>

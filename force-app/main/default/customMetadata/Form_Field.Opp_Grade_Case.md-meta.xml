@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-    <label>Account Manager</label>
+    <label>Opposite Grade Case</label>
     <protected>false</protected>
     <values>
         <field>Controller_Field__c</field>
@@ -16,7 +16,7 @@
     </values>
     <values>
         <field>Dynamic_SOQL__c</field>
-        <value xsi:type="xsd:string">SELECT Owner.Name from Account WHERE Id = &apos;{Maintenance_Account__c}&apos; LIMIT 1</value>
+        <value xsi:type="xsd:string">SELECT CaseNumber from Case WHERE Final_Audit_Grade__c = &apos;{Final_Audit_Grade__c}&apos; LIMIT 1</value>
     </values>
     <values>
         <field>Fetch_On_Edit__c</field>
@@ -24,15 +24,15 @@
     </values>
     <values>
         <field>Field_API_Name__c</field>
-        <value xsi:type="xsd:string">Account_Manager__c</value>
+        <value xsi:type="xsd:string">Opp_Grade_Case</value>
     </values>
     <values>
         <field>Field_Type__c</field>
-        <value xsi:type="xsd:string">Lookup</value>
+        <value xsi:type="xsd:string">Text</value>
     </values>
     <values>
         <field>Form_Section__c</field>
-        <value xsi:type="xsd:string">General_Info</value>
+        <value xsi:type="xsd:string">QC_Parameters</value>
     </values>
     <values>
         <field>Formula_Logic__c</field>
@@ -60,11 +60,11 @@
     </values>
     <values>
         <field>Lookup_Target_Object__c</field>
-        <value xsi:type="xsd:string">Account</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Order__c</field>
-        <value xsi:type="xsd:double">12.0</value>
+        <value xsi:type="xsd:double">5.0</value>
     </values>
     <values>
         <field>Override_Dependency_JSON__c</field>
@@ -72,7 +72,7 @@
     </values>
     <values>
         <field>Override_Label__c</field>
-        <value xsi:type="xsd:string">Account Manager Who Will Be Responsible For Service and Maintenance Of Product</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Override_Picklist_Values__c</field>
@@ -100,7 +100,7 @@
     </values>
     <values>
         <field>Save_To_Database__c</field>
-        <value xsi:type="xsd:boolean">true</value>
+        <value xsi:type="xsd:boolean">false</value>
     </values>
     <values>
         <field>Source_Field_API_Name__c</field>

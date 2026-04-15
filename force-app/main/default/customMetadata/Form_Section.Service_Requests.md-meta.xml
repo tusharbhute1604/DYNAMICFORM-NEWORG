@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
-    <label>Other Details</label>
+    <label>Service Requests</label>
     <protected>false</protected>
     <values>
         <field>Allow_Multiple_Rows__c</field>
-        <value xsi:type="xsd:boolean">false</value>
+        <value xsi:type="xsd:boolean">true</value>
     </values>
     <values>
         <field>Collapse_by_Default__c</field>
-        <value xsi:type="xsd:boolean">false</value>
+        <value xsi:type="xsd:boolean">true</value>
     </values>
     <values>
         <field>Custom_Component_Name__c</field>
@@ -28,11 +28,11 @@
     </values>
     <values>
         <field>Object_API_Name__c</field>
-        <value xsi:type="xsd:string">Case</value>
+        <value xsi:type="xsd:string">Service_Request__c</value>
     </values>
     <values>
         <field>Order__c</field>
-        <value xsi:type="xsd:double">9.0</value>
+        <value xsi:type="xsd:double">6.0</value>
     </values>
     <values>
         <field>Override_Label__c</field>
@@ -44,7 +44,7 @@
     </values>
     <values>
         <field>Relationship_Parent_Field__c</field>
-        <value xsi:nil="true"/>
+        <value xsi:type="xsd:string">Case__c</value>
     </values>
     <values>
         <field>Render_As__c</field>
@@ -56,16 +56,10 @@
     </values>
     <values>
         <field>Show_On__c</field>
-        <value xsi:type="xsd:string">Both</value>
+        <value xsi:nil="true"/>
     </values>
     <values>
         <field>Visibility_Logic__c</field>
-        <value xsi:type="xsd:string">{
-  &quot;operator&quot;: &quot;AND&quot;,
-  &quot;conditions&quot;: [
-    { &quot;when&quot;: &quot;MATRIX__Country_Service_Mapping__Domestic_High_Value__US&quot;, &quot;operator&quot;: &quot;equals&quot;, &quot;value&quot;: true },
-    { &quot;when&quot;: &quot;Subject&quot;, &quot;operator&quot;: &quot;not_equals&quot;, &quot;value&quot;: &quot;&quot; }
-  ]
-}</value>
+        <value xsi:nil="true"/>
     </values>
 </CustomMetadata>

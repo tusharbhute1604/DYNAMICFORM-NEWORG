@@ -121,12 +121,6 @@
     </values>
     <values>
         <field>Visibility_Logic__c</field>
-        <value xsi:type="xsd:string">{
-  &quot;operator&quot;: &quot;AND&quot;,
-  &quot;conditions&quot;: [
-    { &quot;when&quot;: &quot;MATRIX__Country_Service_Mapping__Domestic_High_Value__US&quot;, &quot;operator&quot;: &quot;equals&quot;, &quot;value&quot;: true },
-    { &quot;when&quot;: &quot;Subject&quot;, &quot;operator&quot;: &quot;not_equals&quot;, &quot;value&quot;: &quot;&quot; }
-  ]
-}</value>
+        <value xsi:nil="true"/>
     </values>
 </CustomMetadata>

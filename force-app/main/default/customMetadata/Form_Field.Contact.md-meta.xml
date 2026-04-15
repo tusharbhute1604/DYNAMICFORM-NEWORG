@@ -116,6 +116,11 @@
     </values>
     <values>
         <field>Visibility_Logic__c</field>
-        <value xsi:nil="true"/>
+        <value xsi:type="xsd:string">{
+&quot;operator&quot;: &quot;AND&quot;,
+&quot;conditions&quot;: [
+{ &quot;when&quot;: &quot;Priority&quot;, &quot;operator&quot;: &quot;equals&quot;, &quot;value&quot;: &quot;Low&quot; }
+]
+}</value>
     </values>
 </CustomMetadata>
