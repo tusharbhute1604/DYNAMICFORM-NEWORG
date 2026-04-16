@@ -419,9 +419,9 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             
             setTimeout(() => { 
                 try {
-                    // *** FIX: Pass true to indicate this is the Initial Load sweep ***
+                    // *** FIX: Pass true for isInitialLoad on boot sequence
                     this.calculateFormulas(true); 
-                    this.evaluateVisibility(); 
+                    this.evaluateVisibility(true); 
                     this.applyMatrixRules(); 
                     this.fetchDependentData(); 
                     this.fetchMissingLookupDetails(); 
@@ -429,7 +429,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     for (let uuid in this.sectionData) {
                         for (let fieldApi in this.sectionData[uuid]) {
                             if (this.sectionData[uuid][fieldApi]) {
-                                // *** FIX: Pass true to indicate Initial Load ***
                                 this.evaluateDynamicQueries(fieldApi, uuid, true);
                             }
                         }
@@ -556,7 +555,9 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                     const targetSec = this.sections.find(s => s.id === sec.id);
                                     if (targetSec) targetSec.matrixRows = matrixConfig.rows;
                                     this.applyMatrixRules();
-                                    this.evaluateVisibility(); 
+                                    
+                                    // *** FIX: Pass true for isInitialLoad on dependent fetch to prevent wipe
+                                    this.evaluateVisibility(true); 
                                 } catch(e) {}
                             }
                         }).catch(err => {});
@@ -889,7 +890,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
-    // *** FIX: Added isInitialLoad flag to respect CMDT Fetch_On_Edit__c
     evaluateDynamicQueries(changedFieldApi, rowId, isInitialLoad = false) {
         if (!this._activeSoqlQueries) this._activeSoqlQueries = {};
         for (let sec of this.sections) {
@@ -898,19 +898,18 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 for (let f of row.fields) {
                     if (f.dynamicSoql && f.soqlDependencies && f.soqlDependencies.includes(changedFieldApi)) {
                         
-                        // *** NEW: Check the Fetch_On_Edit__c flag during form load sweep
                         if (isInitialLoad && this.isEditMode && !f.fetchOnEdit) {
-                            continue; // Skip the SOQL overwrite!
+                            continue; 
                         }
 
-                        this.executeSingleDynamicQuery(f, row.id);
+                        this.executeSingleDynamicQuery(f, row.id, isInitialLoad);
                     }
                 }
             }
         }
     }
 
-    executeSingleDynamicQuery(field, rowId) {
+    executeSingleDynamicQuery(field, rowId, isInitialLoad = false) {
         let bindParams = {};
         let hasAllParams = true;
         
@@ -933,8 +932,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== emptyVal) {
                 this.sectionData[rowId][field.apiName] = emptyVal;
                 this.updateFieldState(rowId, field.apiName, { currentValue: emptyVal, currentDetails: '' });
-                this.calculateFormulas();
-                this.evaluateVisibility();
+                this.calculateFormulas(isInitialLoad);
+                this.evaluateVisibility(isInitialLoad);
             }
             return; 
         }
@@ -995,13 +994,13 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     }
 
                     this.filterDependencies(rowId, field.apiName, newValue);
-                    this.calculateFormulas();
-                    this.evaluateVisibility();
+                    this.calculateFormulas(isInitialLoad);
+                    this.evaluateVisibility(isInitialLoad);
                     this.applyMatrixRules();
-                    this.evaluateDynamicQueries(field.apiName, rowId); 
+                    this.evaluateDynamicQueries(field.apiName, rowId, isInitialLoad); 
                     
                     if (field.isLookup) {
-                        this.handleReactiveContextChange(field.apiName, newValue);
+                        this.handleReactiveContextChange(field.apiName, newValue, isInitialLoad);
                     }
                 }
             })
@@ -1040,7 +1039,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
-    // *** FIX: Pass isInitialLoad to formulas so we can accurately pass it down the chain
     calculateFormulas(isInitialLoad = false) {
         let triggeredFormulas = []; 
 
@@ -1084,7 +1082,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
-    evaluateVisibility() {
+    // *** FIX: Accept isInitialLoad parameter ***
+    evaluateVisibility(isInitialLoad = false) {
         let forceSectionRepaint = false;
         let isStabilized = false;
         let loopCount = 0;
@@ -1225,7 +1224,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                     if (currentDataVal !== emptyVal && currentDataVal !== undefined) needsWipe = true;
                                 }
 
-                                if (needsWipe) {
+                                // *** FIX: Shield pre-populated DB data from being wiped during initial boot sequence
+                                if (needsWipe && !isInitialLoad) {
                                     this.sectionData[row.id][f.apiName] = emptyVal;
                                     f.currentValue = emptyVal;
                                     
@@ -1271,7 +1271,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             }
 
             if (dataWipedThisPass) {
-                this.calculateFormulas();
+                // Pass isInitialLoad to formula calculation
+                this.calculateFormulas(isInitialLoad);
             }
 
         } while (!isStabilized);
@@ -1451,7 +1452,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         this.evaluateVisibility(); 
     }
 
-    handleReactiveContextChange(controllingFieldApi, newRecordId) {
+    handleReactiveContextChange(controllingFieldApi, newRecordId, isInitialLoad = false) {
         let dependentFieldsToFetch = [];
         let sourceFieldsToQuery = [];
 
@@ -1482,10 +1483,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     currentDetails: ''
                 });
                 
-                this.evaluateDynamicQueries(dep.field.apiName, dep.rowId);
+                this.evaluateDynamicQueries(dep.field.apiName, dep.rowId, isInitialLoad);
             });
-            this.evaluateVisibility();
-            this.calculateFormulas();
+            this.evaluateVisibility(isInitialLoad);
+            this.calculateFormulas(isInitialLoad);
             return;
         }
 
@@ -1509,11 +1510,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             currentDetails: '' 
                         });
 
-                        this.evaluateDynamicQueries(f.apiName, dep.rowId);
+                        this.evaluateDynamicQueries(f.apiName, dep.rowId, isInitialLoad);
                     }
                 });
-                this.evaluateVisibility();
-                this.calculateFormulas();
+                this.evaluateVisibility(isInitialLoad);
+                this.calculateFormulas(isInitialLoad);
                 this.fetchMissingLookupDetails(); 
             })
             .catch(err => {})
