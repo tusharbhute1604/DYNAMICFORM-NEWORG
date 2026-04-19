@@ -419,9 +419,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             
             setTimeout(() => { 
                 try {
-                    // *** FIX: Pass true for isInitialLoad on boot sequence
                     this.calculateFormulas(true); 
-                    this.evaluateVisibility(true); 
+                    this.evaluateVisibility(); 
                     this.applyMatrixRules(); 
                     this.fetchDependentData(); 
                     this.fetchMissingLookupDetails(); 
@@ -555,9 +554,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                     const targetSec = this.sections.find(s => s.id === sec.id);
                                     if (targetSec) targetSec.matrixRows = matrixConfig.rows;
                                     this.applyMatrixRules();
-                                    
-                                    // *** FIX: Pass true for isInitialLoad on dependent fetch to prevent wipe
-                                    this.evaluateVisibility(true); 
+                                    this.evaluateVisibility(); 
                                 } catch(e) {}
                             }
                         }).catch(err => {});
@@ -856,6 +853,12 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 soqlDependencies: soqlDependenciesArr, 
                 currentValue: finalValue, 
                 currentDetails: currentDetails ? String(currentDetails) : '', 
+                
+                // *** NEW: Store initial values for the 'Restore on Show' protocol ***
+                _restorableValue: initialValue,
+                _restorableDisplayValue: displayValue,
+                _restorableDetails: currentDetails ? String(currentDetails) : '',
+
                 isVisible: true, 
                 cssDisplayClass: '', 
                 filteredOptions: currentOptions, 
@@ -902,14 +905,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             continue; 
                         }
 
-                        this.executeSingleDynamicQuery(f, row.id, isInitialLoad);
+                        this.executeSingleDynamicQuery(f, row.id);
                     }
                 }
             }
         }
     }
 
-    executeSingleDynamicQuery(field, rowId, isInitialLoad = false) {
+    executeSingleDynamicQuery(field, rowId) {
         let bindParams = {};
         let hasAllParams = true;
         
@@ -932,8 +935,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== emptyVal) {
                 this.sectionData[rowId][field.apiName] = emptyVal;
                 this.updateFieldState(rowId, field.apiName, { currentValue: emptyVal, currentDetails: '' });
-                this.calculateFormulas(isInitialLoad);
-                this.evaluateVisibility(isInitialLoad);
+                this.calculateFormulas();
+                this.evaluateVisibility();
             }
             return; 
         }
@@ -994,13 +997,13 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     }
 
                     this.filterDependencies(rowId, field.apiName, newValue);
-                    this.calculateFormulas(isInitialLoad);
-                    this.evaluateVisibility(isInitialLoad);
+                    this.calculateFormulas();
+                    this.evaluateVisibility();
                     this.applyMatrixRules();
-                    this.evaluateDynamicQueries(field.apiName, rowId, isInitialLoad); 
+                    this.evaluateDynamicQueries(field.apiName, rowId); 
                     
                     if (field.isLookup) {
-                        this.handleReactiveContextChange(field.apiName, newValue, isInitialLoad);
+                        this.handleReactiveContextChange(field.apiName, newValue);
                     }
                 }
             })
@@ -1082,11 +1085,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
-    // *** FIX: Accept isInitialLoad parameter ***
-    evaluateVisibility(isInitialLoad = false) {
+    evaluateVisibility() {
         let forceSectionRepaint = false;
         let isStabilized = false;
         let loopCount = 0;
+        let restoredFieldsForSoql = []; // *** NEW: Tracks resurrected fields for downstream broadcasts
 
         do {
             isStabilized = true;
@@ -1097,7 +1100,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 break;
             }
 
-            let dataWipedThisPass = false;
+            let dataChangedThisPass = false; 
 
             for (let i = 0; i < this.sections.length; i++) {
                 let sec = this.sections[i];
@@ -1199,6 +1202,9 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             
                             const finalFieldLogicallyVisible = Boolean(isFieldLogicVisible && sec.isLogicallyVisible);
                             
+                            // *** NEW: Check if the field is coming out of hiding this exact pass
+                            const becameVisible = (f.isVisible === false && finalFieldLogicallyVisible === true);
+                            
                             if (f.isVisible !== finalFieldLogicallyVisible) {
                                 f.isVisible = finalFieldLogicallyVisible;
                                 fieldsChanged = true;
@@ -1212,6 +1218,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                 isStabilized = false;
                             }
 
+                            // *** PROTOCOL 1: WIPE ON HIDE ***
                             if (!finalFieldLogicallyVisible) {
                                 const emptyVal = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
                                 let currentDataVal = this.sectionData[row.id] ? this.sectionData[row.id][f.apiName] : undefined;
@@ -1224,18 +1231,47 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                     if (currentDataVal !== emptyVal && currentDataVal !== undefined) needsWipe = true;
                                 }
 
-                                // *** FIX: Shield pre-populated DB data from being wiped during initial boot sequence
-                                if (needsWipe && !isInitialLoad) {
+                                if (needsWipe) {
                                     this.sectionData[row.id][f.apiName] = emptyVal;
                                     f.currentValue = emptyVal;
                                     
-                                    if (f.isLookup) {
-                                        f.currentDetails = '';
-                                    }
+                                    if (f.isLookup) f.currentDetails = '';
                                     
                                     fieldsChanged = true;
                                     isStabilized = false; 
-                                    dataWipedThisPass = true;
+                                    dataChangedThisPass = true;
+                                }
+                            } 
+                            // *** PROTOCOL 2: RESTORE ON SHOW ***
+                            else if (becameVisible) {
+                                const emptyVal = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
+                                let currentDataVal = this.sectionData[row.id] ? this.sectionData[row.id][f.apiName] : undefined;
+                                
+                                let isEmpty = false;
+                                if (f.isMultiSelect) {
+                                    isEmpty = (!Array.isArray(currentDataVal) || currentDataVal.length === 0) && (typeof currentDataVal !== 'string' || currentDataVal === '');
+                                } else {
+                                    isEmpty = (currentDataVal === emptyVal || currentDataVal === undefined);
+                                }
+
+                                // If empty, and we have a valid pre-populated/default value saved in cache, resurrect it!
+                                if (isEmpty && f._restorableValue !== emptyVal && f._restorableValue !== undefined) {
+                                    if (!this.sectionData[row.id]) this.sectionData[row.id] = {};
+                                    this.sectionData[row.id][f.apiName] = f._restorableValue;
+                                    
+                                    let newSyncedDisplay = f._restorableDisplayValue;
+                                    if (f.isMultiSelect && typeof f._restorableValue === 'string') {
+                                        newSyncedDisplay = f._restorableValue ? f._restorableValue.split(';') : [];
+                                    }
+
+                                    f.currentValue = newSyncedDisplay;
+                                    if (f.isLookup) f.currentDetails = f._restorableDetails;
+                                    
+                                    fieldsChanged = true;
+                                    isStabilized = false; 
+                                    dataChangedThisPass = true;
+                                    
+                                    restoredFieldsForSoql.push({ apiName: f.apiName, rowId: row.id, isLookup: f.isLookup });
                                 }
                             }
 
@@ -1270,15 +1306,37 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 }
             }
 
-            if (dataWipedThisPass) {
-                // Pass isInitialLoad to formula calculation
-                this.calculateFormulas(isInitialLoad);
+            if (dataChangedThisPass) {
+                this.calculateFormulas();
             }
 
         } while (!isStabilized);
 
         if (forceSectionRepaint) {
             this.sections = [...this.sections];
+        }
+
+        // *** NEW: Trigger SOQL & Reactive Context chains for magically resurrected fields
+        if (restoredFieldsForSoql.length > 0) {
+            const uniqueRestores = [];
+            const seenKeys = new Set();
+            restoredFieldsForSoql.forEach(item => {
+                const key = item.rowId + '-' + item.apiName;
+                if (!seenKeys.has(key)) {
+                    seenKeys.add(key);
+                    uniqueRestores.push(item);
+                }
+            });
+
+            uniqueRestores.forEach(item => {
+                this.evaluateDynamicQueries(item.apiName, item.rowId);
+                if (item.isLookup) {
+                    const restoredVal = this.sectionData[item.rowId] ? this.sectionData[item.rowId][item.apiName] : null;
+                    if (restoredVal) {
+                        this.handleReactiveContextChange(item.apiName, restoredVal);
+                    }
+                }
+            });
         }
     }
 
@@ -1422,7 +1480,19 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 newFilteredOpts = f.filteredOptions.map(opt => ({ label: String(opt.label), value: String(opt.value) }));
             }
             
-            return { ...f, currentValue: newDisplay, lookupOptions: [], showLookupOptions: false, uploadedFiles: [], filteredOptions: newFilteredOpts, cssDisplayClass: '' };
+            // *** FIX: Explicitly assign the freshly calculated memory to the new row ***
+            return { 
+                ...f, 
+                currentValue: newDisplay, 
+                lookupOptions: [], 
+                showLookupOptions: false, 
+                uploadedFiles: [], 
+                filteredOptions: newFilteredOpts, 
+                cssDisplayClass: '',
+                _restorableValue: newVal,               // <-- Added
+                _restorableDisplayValue: newDisplay,    // <-- Added
+                _restorableDetails: ''                  // <-- Added
+            };
         });
         
         const newRow = { id: newUuid, label: `Item #${targetSection.rows.length + 1}`, fields: newFields, isRemovable: true };
@@ -1452,7 +1522,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         this.evaluateVisibility(); 
     }
 
-    handleReactiveContextChange(controllingFieldApi, newRecordId, isInitialLoad = false) {
+    handleReactiveContextChange(controllingFieldApi, newRecordId) {
         let dependentFieldsToFetch = [];
         let sourceFieldsToQuery = [];
 
@@ -1483,10 +1553,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     currentDetails: ''
                 });
                 
-                this.evaluateDynamicQueries(dep.field.apiName, dep.rowId, isInitialLoad);
+                this.evaluateDynamicQueries(dep.field.apiName, dep.rowId);
             });
-            this.evaluateVisibility(isInitialLoad);
-            this.calculateFormulas(isInitialLoad);
+            this.evaluateVisibility();
+            this.calculateFormulas();
             return;
         }
 
@@ -1510,11 +1580,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             currentDetails: '' 
                         });
 
-                        this.evaluateDynamicQueries(f.apiName, dep.rowId, isInitialLoad);
+                        this.evaluateDynamicQueries(f.apiName, dep.rowId);
                     }
                 });
-                this.evaluateVisibility(isInitialLoad);
-                this.calculateFormulas(isInitialLoad);
+                this.evaluateVisibility();
+                this.calculateFormulas();
                 this.fetchMissingLookupDetails(); 
             })
             .catch(err => {})
