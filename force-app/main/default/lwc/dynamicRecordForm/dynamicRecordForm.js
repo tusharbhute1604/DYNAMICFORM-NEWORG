@@ -419,9 +419,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             
             setTimeout(() => { 
                 try {
+                    // *** EXECUTION ORDER UNIFIED ***
                     this.calculateFormulas(true); 
-                    this.evaluateVisibility(); 
                     this.applyMatrixRules(); 
+                    this.evaluateVisibility(); 
+                    
                     this.fetchDependentData(); 
                     this.fetchMissingLookupDetails(); 
                     
@@ -564,8 +566,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         });
     }
 
+    // *** UPGRADED: Returns boolean so the loop knows if data was destroyed ***
     applyMatrixRules() {
         let forceRepaint = false;
+        let dataWipedThisPass = false;
+
         for (let sec of this.sections) {
             if (!sec.isMatrix || !sec.matrixRows) continue;
             for (let row of sec.matrixRows) {
@@ -594,6 +599,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             if (!this.matrixState) this.matrixState = {};
                             this.matrixState[`MATRIX__${sec.developerName}__${cell.rowKey}__${cell.colKey}`] = emptyDisplay;
                             forceRepaint = true;
+                            dataWipedThisPass = true;
                         }
                     }
                 }
@@ -603,6 +609,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         if (forceRepaint) {
             this.sections = [...this.sections];
         }
+
+        return dataWipedThisPass;
     }
 
     initializeMatrix(config, sectionDevName, fullDataBundle, matrixObjectName) {
@@ -699,6 +707,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 }
             }
         }
+        
+        // *** EXECUTION ORDER UNIFIED ***
+        this.calculateFormulas(); 
+        this.applyMatrixRules();
         this.evaluateVisibility();
     }
 
@@ -854,7 +866,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 currentValue: finalValue, 
                 currentDetails: currentDetails ? String(currentDetails) : '', 
                 
-                // *** NEW: Store initial values for the 'Restore on Show' protocol ***
                 _restorableValue: initialValue,
                 _restorableDisplayValue: displayValue,
                 _restorableDetails: currentDetails ? String(currentDetails) : '',
@@ -885,9 +896,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             this.sectionData[rowId][fieldApi] = value; 
             
             this.filterDependencies(rowId, fieldApi, value);
+            
+            // *** EXECUTION ORDER UNIFIED ***
             this.calculateFormulas();
-            this.evaluateVisibility(); 
             this.applyMatrixRules(); 
+            this.evaluateVisibility(); 
             
             this.evaluateDynamicQueries(fieldApi, rowId);
         }
@@ -935,7 +948,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== emptyVal) {
                 this.sectionData[rowId][field.apiName] = emptyVal;
                 this.updateFieldState(rowId, field.apiName, { currentValue: emptyVal, currentDetails: '' });
+                
+                // *** EXECUTION ORDER UNIFIED ***
                 this.calculateFormulas();
+                this.applyMatrixRules();
                 this.evaluateVisibility();
             }
             return; 
@@ -997,9 +1013,12 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     }
 
                     this.filterDependencies(rowId, field.apiName, newValue);
+                    
+                    // *** EXECUTION ORDER UNIFIED ***
                     this.calculateFormulas();
-                    this.evaluateVisibility();
                     this.applyMatrixRules();
+                    this.evaluateVisibility();
+                    
                     this.evaluateDynamicQueries(field.apiName, rowId); 
                     
                     if (field.isLookup) {
@@ -1085,11 +1104,12 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
+    // *** STABILIZATION LOOP UPGRADED ***
     evaluateVisibility() {
         let forceSectionRepaint = false;
         let isStabilized = false;
         let loopCount = 0;
-        let restoredFieldsForSoql = []; // *** NEW: Tracks resurrected fields for downstream broadcasts
+        let restoredFieldsForSoql = []; 
 
         do {
             isStabilized = true;
@@ -1202,7 +1222,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             
                             const finalFieldLogicallyVisible = Boolean(isFieldLogicVisible && sec.isLogicallyVisible);
                             
-                            // *** NEW: Check if the field is coming out of hiding this exact pass
                             const becameVisible = (f.isVisible === false && finalFieldLogicallyVisible === true);
                             
                             if (f.isVisible !== finalFieldLogicallyVisible) {
@@ -1218,7 +1237,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                 isStabilized = false;
                             }
 
-                            // *** PROTOCOL 1: WIPE ON HIDE ***
                             if (!finalFieldLogicallyVisible) {
                                 const emptyVal = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
                                 let currentDataVal = this.sectionData[row.id] ? this.sectionData[row.id][f.apiName] : undefined;
@@ -1242,7 +1260,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                     dataChangedThisPass = true;
                                 }
                             } 
-                            // *** PROTOCOL 2: RESTORE ON SHOW ***
                             else if (becameVisible) {
                                 const emptyVal = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
                                 let currentDataVal = this.sectionData[row.id] ? this.sectionData[row.id][f.apiName] : undefined;
@@ -1254,7 +1271,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                     isEmpty = (currentDataVal === emptyVal || currentDataVal === undefined);
                                 }
 
-                                // If empty, and we have a valid pre-populated/default value saved in cache, resurrect it!
                                 if (isEmpty && f._restorableValue !== emptyVal && f._restorableValue !== undefined) {
                                     if (!this.sectionData[row.id]) this.sectionData[row.id] = {};
                                     this.sectionData[row.id][f.apiName] = f._restorableValue;
@@ -1306,8 +1322,15 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 }
             }
 
+            // *** NEW: Cascade visibility changes instantly into the Matrix rules ***
             if (dataChangedThisPass) {
                 this.calculateFormulas();
+                
+                // If the destroyed data changed a matrix cell to readonly, loop again!
+                let matrixWipedData = this.applyMatrixRules();
+                if (matrixWipedData) {
+                    isStabilized = false;
+                }
             }
 
         } while (!isStabilized);
@@ -1316,7 +1339,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             this.sections = [...this.sections];
         }
 
-        // *** NEW: Trigger SOQL & Reactive Context chains for magically resurrected fields
         if (restoredFieldsForSoql.length > 0) {
             const uniqueRestores = [];
             const seenKeys = new Set();
@@ -1480,7 +1502,6 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 newFilteredOpts = f.filteredOptions.map(opt => ({ label: String(opt.label), value: String(opt.value) }));
             }
             
-            // *** FIX: Explicitly assign the freshly calculated memory to the new row ***
             return { 
                 ...f, 
                 currentValue: newDisplay, 
@@ -1489,9 +1510,9 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 uploadedFiles: [], 
                 filteredOptions: newFilteredOpts, 
                 cssDisplayClass: '',
-                _restorableValue: newVal,               // <-- Added
-                _restorableDisplayValue: newDisplay,    // <-- Added
-                _restorableDetails: ''                  // <-- Added
+                _restorableValue: newVal,               
+                _restorableDisplayValue: newDisplay,    
+                _restorableDetails: ''                  
             };
         });
         
@@ -1555,8 +1576,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 
                 this.evaluateDynamicQueries(dep.field.apiName, dep.rowId);
             });
-            this.evaluateVisibility();
+            
+            // *** EXECUTION ORDER UNIFIED ***
             this.calculateFormulas();
+            this.applyMatrixRules();
+            this.evaluateVisibility();
             return;
         }
 
@@ -1583,8 +1607,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         this.evaluateDynamicQueries(f.apiName, dep.rowId);
                     }
                 });
-                this.evaluateVisibility();
+                
+                // *** EXECUTION ORDER UNIFIED ***
                 this.calculateFormulas();
+                this.applyMatrixRules();
+                this.evaluateVisibility();
                 this.fetchMissingLookupDetails(); 
             })
             .catch(err => {})
