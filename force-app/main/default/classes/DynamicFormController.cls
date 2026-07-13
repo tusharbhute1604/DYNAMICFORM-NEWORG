@@ -264,15 +264,18 @@ public with sharing class DynamicFormController {
     @AuraEnabled(cacheable=true)
     public static List<Map<String, String>> searchRecords(String searchTerm, String objectApiName, String searchFields) {
         try {
-            String key = '%' + searchTerm + '%';
             List<String> fieldList = searchFields.split(',');
-            String whereClause = '';
-            for(String f : fieldList) {
-                if(whereClause != '') whereClause += ' OR ';
-                whereClause += String.escapeSingleQuotes(f.trim()) + ' LIKE :key';
-            }
-            String query = 'SELECT Id, ' + String.escapeSingleQuotes(searchFields) + ' FROM ' + String.escapeSingleQuotes(objectApiName) + ' WHERE (' + whereClause + ') LIMIT 10';
-            List<SObject> records = Database.query(query);
+            for (Integer i = 0; i < fieldList.size(); i++) { fieldList[i] = fieldList[i].trim(); }
+            String fieldsCsv = String.join(fieldList, ', ');
+
+            // SOSL leverages the Salesforce search index instead of a full table scan,
+            // which is what a leading-wildcard SOQL LIKE '%term%' forces on large objects.
+            String soslTerm = escapeSoslReservedChars(searchTerm) + '*';
+            String sosl = 'FIND \'' + soslTerm + '\' IN ALL FIELDS RETURNING ' +
+                String.escapeSingleQuotes(objectApiName) + '(Id, ' + String.escapeSingleQuotes(fieldsCsv) + ' LIMIT 10)';
+
+            List<List<SObject>> searchResults = Search.query(sosl);
+            List<SObject> records = searchResults.isEmpty() ? new List<SObject>() : searchResults[0];
             List<Map<String, String>> results = new List<Map<String, String>>();
             String primaryField = fieldList[0].trim();
             String secondaryField = (fieldList.size() > 1) ? fieldList[1].trim() : null;
@@ -759,6 +762,17 @@ public with sharing class DynamicFormController {
         } catch (Exception e) {
             throw new AuraHandledException(getCleanErrorMessage(e));
         }
+    }
+
+    private static String escapeSoslReservedChars(String term) {
+        if (String.isBlank(term)) return term;
+        Set<String> reserved = new Set<String>{ '\\', '?', '&', '|', '!', '{', '}', '[', ']', '(', ')', '^', '~', '*', ':', '"', '\'' };
+        String output = '';
+        for (Integer i = 0; i < term.length(); i++) {
+            String ch = term.substring(i, i + 1);
+            output += reserved.contains(ch) ? '\\' + ch : ch;
+        }
+        return output;
     }
 
     private static String getCleanErrorMessage(Exception e) {

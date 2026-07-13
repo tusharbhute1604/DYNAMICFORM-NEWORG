@@ -883,8 +883,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
     handleFieldChange(event) {
         const fieldApi = event.currentTarget.dataset.api;
-        const rowId = event.currentTarget.dataset.row; 
-        
+        const rowId = event.currentTarget.dataset.row;
+
         let value = event.target.type === 'checkbox' ? Boolean(event.target.checked) : event.target.value;
         if (event.detail && event.detail.value !== undefined && event.target.type !== 'checkbox') {
             value = event.detail.value;
@@ -893,16 +893,40 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         if (value === undefined || value === null) value = '';
 
         if (this.sectionData[rowId] && this.sectionData[rowId][fieldApi] !== value) {
-            this.sectionData[rowId][fieldApi] = value; 
-            
+            this.sectionData[rowId][fieldApi] = value;
+
             this.filterDependencies(rowId, fieldApi, value);
-            
-            // *** EXECUTION ORDER UNIFIED ***
-            this.calculateFormulas();
-            this.applyMatrixRules(); 
-            this.evaluateVisibility(); 
-            
-            this.evaluateDynamicQueries(fieldApi, rowId);
+
+            const field = this.findField(fieldApi, rowId);
+            const textLikeTypes = ['Text', 'Long Text Area', 'Number', 'Currency', 'Percent'];
+            const isTextLike = field && textLikeTypes.includes(field.fieldType);
+            const hasSoqlDependency = field && field.soqlDependencies && field.soqlDependencies.length > 0;
+
+            // Debounce reactive cycle for text-like fields to keep typing responsive.
+            // Picklists, lookups, checkboxes still run immediately for cascading logic.
+            if (isTextLike && !hasSoqlDependency) {
+                const debounceKey = `field-${rowId}-${fieldApi}`;
+                if (!this._fieldChangeTimers) this._fieldChangeTimers = {};
+                if (this._fieldChangeTimers[debounceKey]) {
+                    clearTimeout(this._fieldChangeTimers[debounceKey]);
+                }
+
+                this._fieldChangeTimers[debounceKey] = setTimeout(() => {
+                    this.calculateFormulas();
+                    this.applyMatrixRules();
+                    this.evaluateVisibility();
+                    delete this._fieldChangeTimers[debounceKey];
+                }, 200);
+            } else {
+                // Non-text fields and fields with SOQL dependencies run reactivity immediately
+                this.calculateFormulas();
+                this.applyMatrixRules();
+                this.evaluateVisibility();
+
+                if (hasSoqlDependency) {
+                    this.evaluateDynamicQueries(fieldApi, rowId);
+                }
+            }
         }
     }
 
@@ -1149,14 +1173,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 let finalSecVisible = Boolean(sec.isLogicallyVisible && isWizardVisible); 
 
                 if (this.isSubmitHidden) {
-                    sec.isLogicallyVisible = Boolean(hasUpload);
-                    finalSecVisible = Boolean(hasUpload);
+                    finalSecVisible = Boolean(hasUpload);           // only change the display outcome
                     if (hasUpload && !sec.isExpanded) {
                         sec.isExpanded = true;
                         secChanged = true;
                         isStabilized = false;
                     }
                 }
+
 
                 if (sec.isVisible !== finalSecVisible) {
                     sec.isVisible = finalSecVisible;
@@ -1642,70 +1666,90 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             this.handleReactiveContextChange(fieldApi, null); 
         }
 
+        const debounceKey = `${rowId}-${fieldApi}`;
+        if (!this._lookupSearchTimers) this._lookupSearchTimers = {};
+        if (this._lookupSearchTimers[debounceKey]) {
+            clearTimeout(this._lookupSearchTimers[debounceKey]);
+            delete this._lookupSearchTimers[debounceKey];
+        }
+
         if (!searchTerm) {
-            this.updateFieldState(rowId, fieldApi, { 
-                currentValue: '', 
-                currentDetails: '', 
-                showLookupOptions: false, 
-                lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click' 
+            this.updateFieldState(rowId, fieldApi, {
+                currentValue: '',
+                currentDetails: '',
+                showLookupOptions: false,
+                lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click'
             });
-            
+
             if (idChanged) {
                 this.evaluateDynamicQueries(fieldApi, rowId);
             }
 
-            this.sectionData = { ...this.sectionData }; 
+            this.sectionData = { ...this.sectionData };
             this.evaluateVisibility();
             return;
         }
 
         if (idChanged) {
             this.evaluateDynamicQueries(fieldApi, rowId);
-            this.sectionData = { ...this.sectionData }; 
+            this.sectionData = { ...this.sectionData };
             this.evaluateVisibility();
         }
 
         if (searchTerm.length >= 2) {
             if (!this._activeSearchTerms) this._activeSearchTerms = {};
-            this._activeSearchTerms[`${rowId}-${fieldApi}`] = searchTerm;
+            this._activeSearchTerms[debounceKey] = searchTerm;
 
-            searchRecords({ searchTerm, objectApiName: field.lookupTargetObject, searchFields: field.lookupSearchField }).then(res => {
-                
-                if (this._activeLookup !== `${rowId}-${fieldApi}`) return;
-                if (this._activeSearchTerms[`${rowId}-${fieldApi}`] !== searchTerm) return;
+            // Debounce so a fast typist fires one Apex/search-index call instead of one per keystroke.
+            this._lookupSearchTimers[debounceKey] = setTimeout(() => {
+                searchRecords({ searchTerm, objectApiName: field.lookupTargetObject, searchFields: field.lookupSearchField }).then(res => {
 
-                const isOpen = res && res.length > 0;
-                let safeOptions = [];
-                if (res) {
-                    safeOptions = res.map(opt => ({
-                        id: String(opt.id), 
-                        label: String(opt.label), 
-                        meta: opt.meta ? String(opt.meta) : '', 
-                        details: opt.details ? String(opt.details) : ''
-                    }));
-                }
-                this.updateFieldState(rowId, fieldApi, { lookupOptions: safeOptions, showLookupOptions: isOpen, lookupClass: isOpen ? 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click slds-is-open' : 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click' });
-            });
+                    if (this._activeLookup !== debounceKey) return;
+                    if (this._activeSearchTerms[debounceKey] !== searchTerm) return;
+
+                    const isOpen = res && res.length > 0;
+                    let safeOptions = [];
+                    if (res) {
+                        safeOptions = res.map(opt => ({
+                            id: String(opt.id),
+                            label: String(opt.label),
+                            meta: opt.meta ? String(opt.meta) : '',
+                            details: opt.details ? String(opt.details) : ''
+                        }));
+                    }
+                    this.updateFieldState(rowId, fieldApi, { lookupOptions: safeOptions, showLookupOptions: isOpen, lookupClass: isOpen ? 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click slds-is-open' : 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click' });
+                });
+            }, 300);
         }
     }
     
     handleLookupSelect(event) {
-        event.preventDefault(); 
+        event.preventDefault();
         const fieldApi = event.currentTarget.dataset.api;
-        const rowId = event.currentTarget.dataset.row; 
+        const rowId = event.currentTarget.dataset.row;
         const recordId = event.currentTarget.dataset.id;
         const label = event.currentTarget.dataset.label;
         const details = event.currentTarget.dataset.details;
-        
+
         if (!this.sectionData[rowId]) this.sectionData[rowId] = {};
         this.sectionData[rowId][fieldApi] = recordId;
 
         this.updateFieldState(rowId, fieldApi, { currentValue: label, currentDetails: details, showLookupOptions: false, lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click' });
+
+        // Clear stale-response guards so pending search calls won't overwrite this selection
+        const debounceKey = `${rowId}-${fieldApi}`;
+        this._activeLookup = null;
+        if (this._activeSearchTerms) delete this._activeSearchTerms[debounceKey];
+        if (this._lookupSearchTimers && this._lookupSearchTimers[debounceKey]) {
+            clearTimeout(this._lookupSearchTimers[debounceKey]);
+            delete this._lookupSearchTimers[debounceKey];
+        }
+
         this.handleReactiveContextChange(fieldApi, recordId);
-        
+
         this.evaluateDynamicQueries(fieldApi, rowId);
-        
-        this.sectionData = { ...this.sectionData }; 
+
+        this.sectionData = { ...this.sectionData };
         this.evaluateVisibility();
     }
 
