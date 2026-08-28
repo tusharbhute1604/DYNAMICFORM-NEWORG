@@ -271,8 +271,26 @@ public with sharing class DynamicFormController {
             // SOSL leverages the Salesforce search index instead of a full table scan,
             // which is what a leading-wildcard SOQL LIKE '%term%' forces on large objects.
             String soslTerm = escapeSoslReservedChars(searchTerm) + '*';
+
+            // FIND matches on ANY field on the object, not just fieldList (e.g. a term
+            // appearing in Description would match when searching CaseNumber). This WHERE
+            // re-filters the FIND-matched candidates down to the configured fields; it's cheap
+            // because it only runs against the already-narrowed SOSL match set, not a full scan.
+            String likeValue = '%' + String.escapeSingleQuotes(searchTerm) + '%';
+            List<String> likeConditions = new List<String>();
+            for (String fName : fieldList) {
+                likeConditions.add(fName + ' LIKE \'' + likeValue + '\'');
+            }
+            String whereClause = '(' + String.join(likeConditions, ' OR ') + ')';
+            // Standard User lookups exclude inactive users by default; SOSL has no equivalent
+            // built in, so enforce it explicitly to match standard lookup behavior.
+            if (objectApiName.equalsIgnoreCase('User')) {
+                whereClause += ' AND IsActive = true';
+            }
+
             String sosl = 'FIND \'' + soslTerm + '\' IN ALL FIELDS RETURNING ' +
-                String.escapeSingleQuotes(objectApiName) + '(Id, ' + String.escapeSingleQuotes(fieldsCsv) + ' LIMIT 10)';
+                String.escapeSingleQuotes(objectApiName) + '(Id, ' + String.escapeSingleQuotes(fieldsCsv) +
+                ' WHERE ' + whereClause + ' LIMIT 10)';
 
             List<List<SObject>> searchResults = Search.query(sosl);
             List<SObject> records = searchResults.isEmpty() ? new List<SObject>() : searchResults[0];

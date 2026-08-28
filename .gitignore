@@ -10,9 +10,18 @@ deploy-options.json
 
 # LWC VSCode autocomplete
 **/lwc/jsconfig.json
+**/lwc/portalDynamicForm
 
-# LWC Jest coverage reports
+# LWC Jest coverage reports & portal files
 coverage/
+PortalFiles/
+PortalDelivery/
+Documentation/Portal-DynamicForm
+**/classes/PortalDynamicFormController.cls
+**/classes/PortalDynamicFormController.cls-meta.xml
+
+# Others
+.claude/
 
 # Logs
 logs

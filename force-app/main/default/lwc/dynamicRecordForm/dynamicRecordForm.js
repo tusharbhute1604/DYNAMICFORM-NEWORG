@@ -6,15 +6,15 @@ import deleteRecord from '@salesforce/apex/DynamicFormController.deleteRecord';
 import searchRecords from '@salesforce/apex/DynamicFormController.searchRecords';
 import getRecordDetails from '@salesforce/apex/DynamicFormController.getRecordDetails';
 import getExistingRecordData from '@salesforce/apex/DynamicFormController.getExistingRecordData';
-import getSourceRecordData from '@salesforce/apex/DynamicFormController.getSourceRecordData'; 
-import uploadFile from '@salesforce/apex/DynamicFormController.uploadFile'; 
+import getSourceRecordData from '@salesforce/apex/DynamicFormController.getSourceRecordData';
+import uploadFile from '@salesforce/apex/DynamicFormController.uploadFile';
 import executeDynamicQuery from '@salesforce/apex/DynamicFormController.executeDynamicQuery';
 import rollbackTransaction from '@salesforce/apex/DynamicFormController.rollbackTransaction';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
 
 function generateUuid() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
         var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
     });
@@ -23,17 +23,17 @@ function generateUuid() {
 export default class DynamicForm extends NavigationMixin(LightningElement) {
     @api formDeveloperName;
     @api formMode = 'auto';
-    @api isLightningOut = false; 
+    @api isLightningOut = false;
 
     _recordTypeId = '';
-    @api 
+    @api
     get recordTypeId() { return this._recordTypeId; }
     set recordTypeId(value) {
         this._recordTypeId = (value === undefined || value === null) ? '' : value;
     }
 
     _recordId;
-    @api 
+    @api
     get recordId() { return this._recordId; }
     set recordId(value) {
         this._recordId = value;
@@ -41,7 +41,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     }
 
     _objectApiName;
-    @api 
+    @api
     get objectApiName() { return this._objectApiName; }
     set objectApiName(value) {
         this._objectApiName = value;
@@ -49,33 +49,33 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     }
 
     @track sections = [];
-    @track sectionData = {}; 
-    @track matrixState = {}; 
-    
+    @track sectionData = {};
+    @track matrixState = {};
+
     @track isLoading = true;
-    _formTargetObject; 
+    _formTargetObject;
     @track formTitle = 'Dynamic Form';
     @track formIcon = 'standard:record';
-    @track formInstructions = ''; 
-    @track isFormActive = true; 
-    @track savedRecordId; 
+    @track formInstructions = '';
+    @track isFormActive = true;
+    @track savedRecordId;
     @track isSubmitHidden = false;
     @track hasRequiredUpload = false;
     @track hasOptionalUpload = false;
     @track hasAnyUpload = false;
     @track isEditMode = false;
-    @track saveWithoutSharing = false; 
+    @track saveWithoutSharing = false;
     @track _recordsToDelete = [];
-    @track _cachedSourceData = {}; 
+    @track _cachedSourceData = {};
     _serverData = {};
     _cachedMetadata;
-    _lastLoadKey = ''; 
+    _lastLoadKey = '';
 
     _activeLookup = null;
     _activeSearchTerms = {};
     _activeSoqlQueries = {};
-    _isSaveCommitted = false; 
-    _rollbackChildIds = []; 
+    _isSaveCommitted = false;
+    _rollbackChildIds = [];
 
     @track labels = {
         cancel: 'Cancel', next: 'Next', previous: 'Previous', finish: 'Finish',
@@ -99,49 +99,49 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         const nextIndex = this.findNextVisibleSectionIndex(this.currentStepIndex);
         return (nextIndex === -1);
     }
-    get showStepButtons() { 
+    get showStepButtons() {
         if (this.isEditMode) return false;
-        if (this.isWizardMode && !this.isLastStep) return false; 
-        return !this.savedRecordId && this.hasAnyUpload; 
+        if (this.isWizardMode && !this.isLastStep) return false;
+        return !this.savedRecordId && this.hasAnyUpload;
     }
-    get showSubmitButton() { 
+    get showSubmitButton() {
         if (!this.isEditMode && this.savedRecordId) return true;
-        if (this.isWizardMode && !this.isLastStep) return false; 
+        if (this.isWizardMode && !this.isLastStep) return false;
         if (this.isEditMode) return true;
-        return !this.hasAnyUpload; 
+        return !this.hasAnyUpload;
     }
     get showNextButton() { return this.isWizardMode && !this.isLastStep && (this.isEditMode || !this.savedRecordId); }
     get showPrevButton() { return this.isWizardMode && !this.isFirstStep && (this.isEditMode || !this.savedRecordId); }
     get submitButtonLabel() { return this.savedRecordId ? this.labels.save : this.labels.submit; }
 
-    showToast(title, message, variant) { 
-        this.dispatchEvent(new ShowToastEvent({ title, message, variant })); 
-        this.dispatchEvent(new CustomEvent('notification', { 
+    showToast(title, message, variant) {
+        this.dispatchEvent(new ShowToastEvent({ title, message, variant }));
+        this.dispatchEvent(new CustomEvent('notification', {
             detail: { title, message, variant },
             bubbles: true,
             composed: true
         }));
     }
 
-    mapType(t) { 
-        const m = { 'Number': 'number', 'Checkbox': 'checkbox', 'Date': 'date', 'DateTime': 'datetime' }; 
-        return m[t] || 'text'; 
+    mapType(t) {
+        const m = { 'Number': 'number', 'Checkbox': 'checkbox', 'Date': 'date', 'DateTime': 'datetime' };
+        return m[t] || 'text';
     }
 
-    findField(apiName, rowId) { 
-        for(let sec of this.sections) { 
-            if(!sec.rows) continue;
-            let row = sec.rows.find(r => r.id === rowId); 
-            if(row) return row.fields.find(f => f.apiName === apiName); 
-        } 
-        return null; 
+    findField(apiName, rowId) {
+        for (let sec of this.sections) {
+            if (!sec.rows) continue;
+            let row = sec.rows.find(r => r.id === rowId);
+            if (row) return row.fields.find(f => f.apiName === apiName);
+        }
+        return null;
     }
 
     @wire(getFormMetadata, { formDeveloperName: '$formDeveloperName', recordTypeId: '$_recordTypeId' })
     wiredMetadata({ error, data }) {
         if (data) {
             this._cachedMetadata = data;
-            this.attemptInit(); 
+            this.attemptInit();
         } else if (error) {
             this.isLoading = false;
             let msg = error.body ? error.body.message : 'Metadata Load Failed';
@@ -160,59 +160,59 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
         const mode = this.formMode ? this.formMode.toLowerCase() : 'auto';
         if (mode === 'edit' && !this.recordId) {
-            return; 
+            return;
         }
 
         const currentKey = `${this.recordId}-${this.objectApiName}-${this.formMode}-${this.recordTypeId}`;
         if (this._lastLoadKey === currentKey) return;
-        this._lastLoadKey = currentKey; 
+        this._lastLoadKey = currentKey;
 
         const data = this._cachedMetadata;
-        this._formTargetObject = data.objectApiName; 
+        this._formTargetObject = data.objectApiName;
         this.formTitle = data.formTitle || 'Dynamic Form';
         this.formIcon = data.formIcon || 'standard:record';
-        this.displayMode = data.displayMode || 'Single Page'; 
-        this.formInstructions = data.formInstructions; 
+        this.displayMode = data.displayMode || 'Single Page';
+        this.formInstructions = data.formInstructions;
         this.saveWithoutSharing = data.saveWithoutSharing === true;
 
         if (data.buttonConfig) {
             try {
                 const overrides = JSON.parse(data.buttonConfig);
                 this.labels = { ...this.labels, ...overrides };
-            } catch(e) {}
+            } catch (e) { }
         }
 
         let shouldLoadData = false;
 
-        if (mode === 'create') shouldLoadData = false; 
-        else if (mode === 'edit') shouldLoadData = true; 
+        if (mode === 'create') shouldLoadData = false;
+        else if (mode === 'edit') shouldLoadData = true;
         else shouldLoadData = (this.recordId && this.recordId.length >= 15);
 
         if (shouldLoadData) {
             const queryConfig = this.buildQueryConfig(data.sections, this._formTargetObject);
-            getExistingRecordData({ 
-                recordId: this.recordId, 
-                objectApiName: this._formTargetObject, 
-                queryConfigJson: JSON.stringify(queryConfig) 
+            getExistingRecordData({
+                recordId: this.recordId,
+                objectApiName: this._formTargetObject,
+                queryConfigJson: JSON.stringify(queryConfig)
             })
-            .then(existingData => {
-                if (existingData) { 
-                    this._serverData = existingData; 
-                    this.buildForm(data.sections, this._formTargetObject, existingData, null, null); 
-                } else { 
-                    this.handleCreateMode(data); 
-                }
-            })
-            .catch(err => {
-                this.handleCreateMode(data);
-            });
-        } else { 
-            this.handleCreateMode(data); 
+                .then(existingData => {
+                    if (existingData) {
+                        this._serverData = existingData;
+                        this.buildForm(data.sections, this._formTargetObject, existingData, null, null);
+                    } else {
+                        this.handleCreateMode(data);
+                    }
+                })
+                .catch(err => {
+                    this.handleCreateMode(data);
+                });
+        } else {
+            this.handleCreateMode(data);
         }
     }
 
     isSectionAllowed(section, mode) {
-        const showOn = section.showOn || 'Both'; 
+        const showOn = section.showOn || 'Both';
         if (showOn === 'Both') return true;
         if (mode === 'create' && showOn === 'Create') return true;
         if (mode === 'edit' && showOn === 'Edit') return true;
@@ -255,7 +255,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     if (!childObjectMap[matrixObj]) {
                         childObjectMap[matrixObj] = {
                             objectApiName: matrixObj,
-                            parentField: sec.relationshipParentField, 
+                            parentField: sec.relationshipParentField,
                             fields: new Set()
                         };
                     }
@@ -281,7 +281,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             currentPrefix = this.recordId.substring(0, 3);
         }
         let representativeField = null;
-        let sourceFieldsToQuery = new Set(); 
+        let sourceFieldsToQuery = new Set();
         let contextMatchField = null;
 
         if (data.sections && currentPrefix) {
@@ -310,14 +310,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         } else { promises.push(Promise.resolve({})); }
 
         Promise.all(promises).then(results => {
-            const recordDetails = results[0]; 
+            const recordDetails = results[0];
             const sourceData = results[1];
             this._cachedSourceData = sourceData || {};
             this.buildForm(data.sections, data.objectApiName, null, recordDetails, null);
         })
-        .catch(error => {
-            this.buildForm(data.sections, data.objectApiName, null, null, null);
-        });
+            .catch(error => {
+                this.buildForm(data.sections, data.objectApiName, null, null, null);
+            });
     }
 
     buildForm(sectionsData, parentObjectName, existingData, prepopData, prepopFieldName, fullDataBundle) {
@@ -327,23 +327,23 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 this.isLoading = false;
                 return;
             }
-            
+
             const cleanSections = JSON.parse(JSON.stringify(sectionsData));
             this.isEditMode = Boolean(existingData != null);
-            this._recordsToDelete = []; 
-            this._rollbackChildIds = []; 
+            this._recordsToDelete = [];
+            this._rollbackChildIds = [];
             this.hasRequiredUpload = false;
             this.hasOptionalUpload = false;
             this.hasAnyUpload = false;
-            this.currentStepIndex = 0; 
-            this.matrixState = {}; 
+            this.currentStepIndex = 0;
+            this.matrixState = {};
 
             const currentMode = this.isEditMode ? 'edit' : 'create';
             const filteredSections = cleanSections.filter(sec => this.isSectionAllowed(sec, currentMode));
 
             this.sections = filteredSections.sort((a, b) => (a.order || 0) - (b.order || 0)).map(sec => {
                 const isMatrix = (sec.renderAs === 'Matrix');
-                const isStandardSection = !isMatrix; 
+                const isStandardSection = !isMatrix;
                 const sectionTargetObject = sec.objectApiName || parentObjectName;
                 const colSize = Math.floor(12 / (sec.numColumns || 2));
                 const isChildSection = (sectionTargetObject !== parentObjectName);
@@ -355,23 +355,23 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         const parsedConfig = JSON.parse(sec.sectionConfig);
                         const matrixObj = sec.objectApiName || 'Form_Matrix_Entry__c';
                         matrixConfig = this.initializeMatrix(parsedConfig, sec.developerName, fullDataBundle, matrixObj);
-                    } catch(e) {}
+                    } catch (e) { }
                 }
                 else if (isStandardSection) {
                     if (isChildSection && existingData && existingData.children && existingData.children[sectionTargetObject]) {
                         const childRecords = existingData.children[sectionTargetObject];
                         rows = childRecords.map((record, index) => {
-                            const rowUuid = generateUuid(); 
+                            const rowUuid = generateUuid();
                             initialSectionData[rowUuid] = {};
                             const processedFields = this.initializeFields(sec.fields, rowUuid, initialSectionData, colSize, record, true, prepopData, fullDataBundle);
-                            if(record.Id) initialSectionData[rowUuid]['Id'] = record.Id;
+                            if (record.Id) initialSectionData[rowUuid]['Id'] = record.Id;
                             return { id: rowUuid, label: `Item #${index + 1}`, fields: processedFields, isRemovable: Boolean(sec.allowMultipleRows) };
                         });
-                    } 
+                    }
                     if (rows.length === 0) {
-                        const rowUuid = generateUuid(); 
+                        const rowUuid = generateUuid();
                         initialSectionData[rowUuid] = {};
-                        
+
                         let dataContext = null;
                         if (isChildSection) {
                             if (existingData && existingData.children && existingData.children[sectionTargetObject] && existingData.children[sectionTargetObject].length > 0) {
@@ -382,51 +382,51 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         }
 
                         const rowIsEdit = Boolean(this.isEditMode && dataContext != null);
-                        
+
                         if (rowIsEdit && dataContext && dataContext.Id) {
                             initialSectionData[rowUuid]['Id'] = dataContext.Id;
                             if (!isChildSection) {
                                 this.savedRecordId = dataContext.Id;
                             }
                         }
-                        
+
                         const processedFields = this.initializeFields(sec.fields, rowUuid, initialSectionData, colSize, dataContext, rowIsEdit, prepopData, existingData);
                         rows.push({ id: rowUuid, label: `Item #1`, fields: processedFields, isRemovable: false });
                     }
                 }
-                
+
                 const startExpanded = sec.isCollapsed ? false : true;
                 const baseClass = startExpanded ? 'slds-section slds-is-open slds-m-bottom_medium' : 'slds-section slds-m-bottom_medium';
 
-                return { 
-                    ...sec, id: sec.id || generateUuid(), targetObject: sectionTargetObject, 
-                    relationshipParentField: sec.relationshipParentField, allowMultiple: Boolean(sec.allowMultipleRows), 
+                return {
+                    ...sec, id: sec.id || generateUuid(), targetObject: sectionTargetObject,
+                    relationshipParentField: sec.relationshipParentField, allowMultiple: Boolean(sec.allowMultipleRows),
                     visibilityLogic: sec.visibilityLogic, colSize: colSize, isVisible: true, rows: rows,
                     isStandardSection: isStandardSection, isMatrix: isMatrix,
-                    isRequired: Boolean(sec.isRequired), 
-                    isExpanded: startExpanded, 
-                    isLogicallyVisible: true, 
-                    sectionClass: baseClass, 
+                    isRequired: Boolean(sec.isRequired),
+                    isExpanded: startExpanded,
+                    isLogicallyVisible: true,
+                    sectionClass: baseClass,
                     matrixColumns: matrixConfig ? matrixConfig.columns : [],
                     matrixRows: matrixConfig ? matrixConfig.rows : [],
-                    parentSectionDevName: sec.parentSectionDevName 
+                    parentSectionDevName: sec.parentSectionDevName
                 };
             });
-            
+
             this.sectionData = initialSectionData;
-            if(this.hasRequiredUpload) this.hasAnyUpload = true;
-            if(this.hasOptionalUpload) this.hasAnyUpload = true;
-            
-            setTimeout(() => { 
+            if (this.hasRequiredUpload) this.hasAnyUpload = true;
+            if (this.hasOptionalUpload) this.hasAnyUpload = true;
+
+            setTimeout(() => {
                 try {
                     // *** EXECUTION ORDER UNIFIED ***
-                    this.calculateFormulas(true); 
-                    this.applyMatrixRules(); 
-                    this.evaluateVisibility(); 
-                    
-                    this.fetchDependentData(); 
-                    this.fetchMissingLookupDetails(); 
-                    
+                    this.calculateFormulas(true);
+                    this.applyMatrixRules();
+                    this.evaluateVisibility();
+
+                    this.fetchDependentData();
+                    this.fetchMissingLookupDetails();
+
                     for (let uuid in this.sectionData) {
                         for (let fieldApi in this.sectionData[uuid]) {
                             if (this.sectionData[uuid][fieldApi]) {
@@ -434,10 +434,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             }
                         }
                     }
-                } catch(error) {
+                } catch (error) {
                     console.error(error);
                 } finally {
-                    this.isLoading = false; 
+                    this.isLoading = false;
                 }
             }, 300);
 
@@ -465,36 +465,36 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             for (let row of sec.rows) {
                 for (let field of row.fields) {
                     const recId = this.sectionData[row.id] ? this.sectionData[row.id][field.apiName] : null;
-                    
+
                     if (field.isLookup && recId) {
                         const needsLabel = (field.currentValue === recId);
                         const needsDetails = (!field.currentDetails && field.lookupSearchField && field.lookupSearchField.includes(','));
-                        
+
                         if (needsLabel || needsDetails) {
                             if (needsLabel) {
                                 this.updateFieldState(row.id, field.apiName, { currentValue: 'Resolving...' });
                             }
-                            
-                            getRecordDetails({ 
-                                recordId: recId, 
-                                objectApiName: field.lookupTargetObject, 
-                                searchFields: field.lookupSearchField || 'Name' 
+
+                            getRecordDetails({
+                                recordId: recId,
+                                objectApiName: field.lookupTargetObject,
+                                searchFields: field.lookupSearchField || 'Name'
                             })
-                            .then(res => {
-                                if (res) {
-                                    let updates = {};
-                                    if (needsLabel && res.label) updates.currentValue = res.label;
-                                    else if (needsLabel && !res.label) updates.currentValue = recId;
-                                    
-                                    if (res.details) updates.currentDetails = res.details;
-                                    this.updateFieldState(row.id, field.apiName, updates);
-                                }
-                            })
-                            .catch(err => {
-                                if (needsLabel) {
-                                    this.updateFieldState(row.id, field.apiName, { currentValue: recId });
-                                }
-                            });
+                                .then(res => {
+                                    if (res) {
+                                        let updates = {};
+                                        if (needsLabel && res.label) updates.currentValue = res.label;
+                                        else if (needsLabel && !res.label) updates.currentValue = recId;
+
+                                        if (res.details) updates.currentDetails = res.details;
+                                        this.updateFieldState(row.id, field.apiName, updates);
+                                    }
+                                })
+                                .catch(err => {
+                                    if (needsLabel) {
+                                        this.updateFieldState(row.id, field.apiName, { currentValue: recId });
+                                    }
+                                });
                         }
                     }
                 }
@@ -508,7 +508,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             if (sec.parentSectionDevName && sec.isMatrix) {
                 const parentSec = this.sections.find(s => s.developerName === sec.parentSectionDevName);
                 if (parentSec && parentSec.rows && parentSec.rows.length > 0) {
-                    
+
                     let effectiveTargetObj = parentSec.targetObject || parentSec.objectApiName;
                     let targetRecordId = null;
 
@@ -520,7 +520,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     }
 
                     if (effectiveTargetObj === this._formTargetObject) {
-                        targetRecordId = this.recordId; 
+                        targetRecordId = this.recordId;
                     } else {
                         if (this._serverData && this._serverData.children && this._serverData.children[effectiveTargetObj] && this._serverData.children[effectiveTargetObj].length > 0) {
                             targetRecordId = this._serverData.children[effectiveTargetObj][0].Id;
@@ -544,22 +544,22 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         };
                         const queryConfig = { parentFields: [{ api: 'Id', type: 'String' }], children: [childConfig] };
                         getExistingRecordData({
-                            recordId: targetRecordId, 
-                            objectApiName: effectiveTargetObj, 
+                            recordId: targetRecordId,
+                            objectApiName: effectiveTargetObj,
                             queryConfigJson: JSON.stringify(queryConfig)
                         })
-                        .then(data => {
-                            if (data && data.children) {
-                                try {
-                                    const parsedConfig = JSON.parse(sec.sectionConfig);
-                                    const matrixConfig = this.initializeMatrix(parsedConfig, sec.developerName, data, matrixObj);
-                                    const targetSec = this.sections.find(s => s.id === sec.id);
-                                    if (targetSec) targetSec.matrixRows = matrixConfig.rows;
-                                    this.applyMatrixRules();
-                                    this.evaluateVisibility(); 
-                                } catch(e) {}
-                            }
-                        }).catch(err => {});
+                            .then(data => {
+                                if (data && data.children) {
+                                    try {
+                                        const parsedConfig = JSON.parse(sec.sectionConfig);
+                                        const matrixConfig = this.initializeMatrix(parsedConfig, sec.developerName, data, matrixObj);
+                                        const targetSec = this.sections.find(s => s.id === sec.id);
+                                        if (targetSec) targetSec.matrixRows = matrixConfig.rows;
+                                        this.applyMatrixRules();
+                                        this.evaluateVisibility();
+                                    } catch (e) { }
+                                }
+                            }).catch(err => { });
                     }
                 }
             }
@@ -576,7 +576,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             for (let row of sec.matrixRows) {
                 for (let cell of row.cells) {
                     let shouldBeReadOnly = cell.isReadOnly;
-                    
+
                     if (cell.readonlyLogic) {
                         shouldBeReadOnly = Boolean(this.checkLogic(cell.readonlyLogic, null, true));
                     } else if (cell.staticReadOnly === true) {
@@ -591,11 +591,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     if (shouldBeReadOnly) {
                         const emptyVal = cell.isCheckbox ? 'false' : '';
                         const emptyDisplay = cell.isCheckbox ? false : '';
-                        
+
                         if (cell.value !== emptyVal) {
                             cell.value = emptyVal;
                             cell.displayValue = emptyDisplay;
-                            
+
                             if (!this.matrixState) this.matrixState = {};
                             this.matrixState[`MATRIX__${sec.developerName}__${cell.rowKey}__${cell.colKey}`] = emptyDisplay;
                             forceRepaint = true;
@@ -605,7 +605,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 }
             }
         }
-        
+
         if (forceRepaint) {
             this.sections = [...this.sections];
         }
@@ -618,7 +618,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         if (fullDataBundle && fullDataBundle.children && fullDataBundle.children[matrixObjectName]) {
             existingEntries = fullDataBundle.children[matrixObjectName];
         }
-        
+
         const safeColumns = config.columns.map(c => {
             return { ...c, safeColKey: String(c.key).replace(/[^a-zA-Z0-9]/g, '_') };
         });
@@ -632,15 +632,15 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 const match = existingEntries.find(e => e.Section_Key__c === sectionDevName && e.Row_Key__c === rowKey && e.Column_Key__c === colKey);
                 const val = match ? match.Value__c : '';
                 const recId = match ? match.Id : null;
-                
+
                 let isReadOnly = false;
-                let staticReadOnly = false; 
+                let staticReadOnly = false;
                 let readonlyLogic = null;
                 let cellType = col.type || 'text';
-                
+
                 if (r.cells && r.cells[colKey]) {
-                    if (r.cells[colKey].readonly === true) { 
-                        isReadOnly = true; 
+                    if (r.cells[colKey].readonly === true) {
+                        isReadOnly = true;
                         staticReadOnly = true;
                     }
                     if (r.cells[colKey].readonlyLogic) {
@@ -651,18 +651,18 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 const isCheckbox = (cellType === 'checkbox');
                 let displayVal = val;
                 if (isCheckbox) { displayVal = (val === 'true'); }
-                
+
                 if (!this.matrixState) this.matrixState = {};
                 this.matrixState[`MATRIX__${sectionDevName}__${rowKey}__${colKey}`] = isCheckbox ? displayVal : val;
 
                 let stepVal = (cellType === 'number') ? 'any' : null;
-                
+
                 let safeDomId = `matrix_${safeRowKey}_${String(colKey).replace(/[^a-zA-Z0-9]/g, '_')}`;
 
                 return {
-                    key: `${rowKey}__${colKey}`, 
-                    domId: safeDomId, 
-                    rowKey: rowKey, colKey: colKey, 
+                    key: `${rowKey}__${colKey}`,
+                    domId: safeDomId,
+                    rowKey: rowKey, colKey: colKey,
                     value: val, displayValue: displayVal, recordId: recId,
                     isReadOnly: Boolean(isReadOnly), staticReadOnly: Boolean(staticReadOnly), readonlyLogic: readonlyLogic,
                     isCheckbox: Boolean(isCheckbox), isStandard: !Boolean(isCheckbox),
@@ -680,7 +680,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         const rowKey = event.target.dataset.row;
         const colKey = event.target.dataset.col;
         let newVal;
-        let isChecked = false; 
+        let isChecked = false;
         if (event.target.type === 'checkbox') {
             isChecked = event.target.checked;
             newVal = isChecked ? 'true' : 'false';
@@ -707,25 +707,25 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 }
             }
         }
-        
+
         // *** EXECUTION ORDER UNIFIED ***
-        this.calculateFormulas(); 
+        this.calculateFormulas();
         this.applyMatrixRules();
         this.evaluateVisibility();
     }
 
     initializeFields(fields, rowUuid, dataStore, colSize, primaryData, isEditMode, prepopData, fullDataBundle) {
         if (!fields) return [];
-        
+
         return fields.sort((a, b) => (a.order || 0) - (b.order || 0)).map(f => {
             let initialValue = '';
             let displayValue = '';
             let currentDetails = '';
-            
+
             const typeLower = f.type ? f.type.toLowerCase() : '';
             const isHeader = (typeLower === 'header');
-            const isDisplayText = (typeLower === 'display text' || typeLower === 'rich text'); 
-            const isCheckbox = (typeLower === 'checkbox'); 
+            const isDisplayText = (typeLower === 'display text' || typeLower === 'rich text');
+            const isCheckbox = (typeLower === 'checkbox');
             const isMultiSelect = (typeLower.includes('multi') && typeLower.includes('picklist'));
             const isPicklist = (!isMultiSelect && typeLower.includes('picklist'));
             const isLookup = (typeLower === 'lookup');
@@ -751,8 +751,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 if (foundValue !== undefined) {
                     initialValue = foundValue;
                     dataStore[rowUuid][f.apiName] = initialValue;
-                    if (isLookup && foundLabel) { displayValue = foundLabel; } 
-                    else if (isMultiSelect && initialValue) { displayValue = initialValue.split(';'); } 
+                    if (isLookup && foundLabel) { displayValue = foundLabel; }
+                    else if (isMultiSelect && initialValue) { displayValue = initialValue.split(';'); }
                     else { displayValue = initialValue; }
                 } else {
                     initialValue = (isCheckbox) ? false : '';
@@ -762,7 +762,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             } else {
                 let isContextMatch = false;
                 if (this.recordId && f.keyPrefix && this.recordId.indexOf(f.keyPrefix) === 0) {
-                     isContextMatch = true;
+                    isContextMatch = true;
                 }
                 const isUserPrepop = Boolean(f.prepopulate && f.lookupTargetObject === 'User' && !f.keyPrefix);
 
@@ -776,7 +776,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     dataStore[rowUuid][f.apiName] = this.recordId;
                     initialValue = this.recordId;
                     if (prepopData) { displayValue = prepopData.label || ''; currentDetails = prepopData.details || ''; }
-                } 
+                }
                 else if (isUserPrepop && this._cachedMetadata) {
                     dataStore[rowUuid][f.apiName] = this._cachedMetadata.currentUserId;
                     initialValue = this._cachedMetadata.currentUserId;
@@ -784,15 +784,15 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 }
                 else {
                     if (f.defaultValue) {
-                        if (isCheckbox) { initialValue = (f.defaultValue.toLowerCase() === 'true'); } 
-                        else if (typeLower === 'number' || typeLower === 'currency' || typeLower === 'percent') { initialValue = Number(f.defaultValue); } 
+                        if (isCheckbox) { initialValue = (f.defaultValue.toLowerCase() === 'true'); }
+                        else if (typeLower === 'number' || typeLower === 'currency' || typeLower === 'percent') { initialValue = Number(f.defaultValue); }
                         else { initialValue = f.defaultValue; }
                     } else { initialValue = (isCheckbox) ? false : ''; }
                     dataStore[rowUuid][f.apiName] = initialValue;
                     displayValue = isMultiSelect ? [] : initialValue;
                 }
             }
-            
+
             if (isFileUploadType) {
                 if (f.required) this.hasRequiredUpload = true;
                 else this.hasOptionalUpload = true;
@@ -804,7 +804,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             }
             if (f.controllerField && f.dependencyMap) {
                 const ctrlVal = dataStore[rowUuid][f.controllerField];
-                if (ctrlVal && f.dependencyMap[ctrlVal]) { 
+                if (ctrlVal && f.dependencyMap[ctrlVal]) {
                     currentOptions = f.dependencyMap[ctrlVal].map(opt => ({ label: String(opt.label), value: String(opt.value) }));
                 }
             }
@@ -813,10 +813,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 currentOptions = [{ label: '--None--', value: '' }, ...currentOptions];
             }
 
-            let isReadOnlyEffective = Boolean(f.readOnly || (f.formulaLogic && f.formulaLogic.length > 0)); 
+            let isReadOnlyEffective = Boolean(f.readOnly || (f.formulaLogic && f.formulaLogic.length > 0));
             let isStaticRequired = Boolean(f.required);
             const calculatedGridSize = isHeader ? 12 : ((isLongTextAreaType || isFileUploadType || isMultiSelect || isDisplayText) ? 12 : colSize);
-            
+
             let finalValue = displayValue;
             if (finalValue === undefined || finalValue === null) {
                 finalValue = isMultiSelect ? [] : (isCheckbox ? false : '');
@@ -831,51 +831,51 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 const regex = /\{([^}]+)\}/g;
                 let match;
                 while ((match = regex.exec(dynamicSoqlStr)) !== null) {
-                    if(!soqlDependenciesArr.includes(match[1])) {
+                    if (!soqlDependenciesArr.includes(match[1])) {
                         soqlDependenciesArr.push(match[1]);
                     }
                 }
             }
 
             return {
-                ...f, 
-                isStaticRequired: isStaticRequired, 
-                required: isStaticRequired, 
-                controllingLookup: f.controllingLookup ? String(f.controllingLookup) : null, 
-                
-                isHeader: Boolean(isHeader), 
+                ...f,
+                isStaticRequired: isStaticRequired,
+                required: isStaticRequired,
+                controllingLookup: f.controllingLookup ? String(f.controllingLookup) : null,
+
+                isHeader: Boolean(isHeader),
                 isDisplayText: Boolean(isDisplayText),
                 htmlContent: f.htmlContent ? String(f.htmlContent) : '',
-                
-                isPicklist: Boolean(isPicklist), 
+
+                isPicklist: Boolean(isPicklist),
                 isMultiSelect: Boolean(isMultiSelect),
-                isLookup: Boolean(isLookup), 
-                isTextArea: Boolean(isLongTextAreaType), 
+                isLookup: Boolean(isLookup),
+                isTextArea: Boolean(isLongTextAreaType),
                 isFileUpload: Boolean(isFileUploadType),
-                isCheckbox: Boolean(isCheckbox), 
-                isReadOnly: isReadOnlyEffective, 
-                uploadedFiles: [], 
+                isCheckbox: Boolean(isCheckbox),
+                isReadOnly: isReadOnlyEffective,
+                uploadedFiles: [],
                 acceptedFormats: f.overridePicklistValues ? String(f.overridePicklistValues).replace(/\s/g, '') : '.pdf,.png,.jpg',
-                
+
                 isStandard: Boolean(!isHeader && !isDisplayText && !isLookup && !isPicklist && !isMultiSelect && !isLongTextAreaType && !isFileUploadType && !isCheckbox),
-                
-                uiType: mappedUiType, 
+
+                uiType: mappedUiType,
                 step: stepVal,
-                dynamicSoql: dynamicSoqlStr, 
-                soqlDependencies: soqlDependenciesArr, 
-                currentValue: finalValue, 
-                currentDetails: currentDetails ? String(currentDetails) : '', 
-                
+                dynamicSoql: dynamicSoqlStr,
+                soqlDependencies: soqlDependenciesArr,
+                currentValue: finalValue,
+                currentDetails: currentDetails ? String(currentDetails) : '',
+
                 _restorableValue: initialValue,
                 _restorableDisplayValue: displayValue,
                 _restorableDetails: currentDetails ? String(currentDetails) : '',
 
-                isVisible: true, 
-                cssDisplayClass: '', 
-                filteredOptions: currentOptions, 
-                lookupOptions: [], 
+                isVisible: true,
+                cssDisplayClass: '',
+                filteredOptions: currentOptions,
+                lookupOptions: [],
                 showLookupOptions: false,
-                lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click', 
+                lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click',
                 gridSize: Number(calculatedGridSize)
             };
         });
@@ -899,8 +899,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
             const field = this.findField(fieldApi, rowId);
             const textLikeTypes = ['Text', 'Long Text Area', 'Number', 'Currency', 'Percent'];
-            const isTextLike = field && textLikeTypes.includes(field.fieldType);
+            const isTextLike = field && textLikeTypes.includes(field.type);
             const hasSoqlDependency = field && field.soqlDependencies && field.soqlDependencies.length > 0;
+
+            // If this is a non-text field, flush any pending text field debounces first (blur-time flush).
+            // Ensures if a user Tabs from a text field to a picklist, text field's reactive cycle runs first.
+            if (!isTextLike) {
+                this.flushAllFieldChangeTimers();
+            }
 
             // Debounce reactive cycle for text-like fields to keep typing responsive.
             // Picklists, lookups, checkboxes still run immediately for cascading logic.
@@ -916,7 +922,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     this.applyMatrixRules();
                     this.evaluateVisibility();
                     delete this._fieldChangeTimers[debounceKey];
-                }, 200);
+                }, 300);
             } else {
                 // Non-text fields and fields with SOQL dependencies run reactivity immediately
                 this.calculateFormulas();
@@ -930,6 +936,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         }
     }
 
+    flushAllFieldChangeTimers() {
+        if (!this._fieldChangeTimers) return;
+        for (let key in this._fieldChangeTimers) {
+            clearTimeout(this._fieldChangeTimers[key]);
+            delete this._fieldChangeTimers[key];
+        }
+    }
+
     evaluateDynamicQueries(changedFieldApi, rowId, isInitialLoad = false) {
         if (!this._activeSoqlQueries) this._activeSoqlQueries = {};
         for (let sec of this.sections) {
@@ -937,9 +951,9 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             for (let row of sec.rows) {
                 for (let f of row.fields) {
                     if (f.dynamicSoql && f.soqlDependencies && f.soqlDependencies.includes(changedFieldApi)) {
-                        
+
                         if (isInitialLoad && this.isEditMode && !f.fetchOnEdit) {
-                            continue; 
+                            continue;
                         }
 
                         this.executeSingleDynamicQuery(f, row.id);
@@ -952,7 +966,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     executeSingleDynamicQuery(field, rowId) {
         let bindParams = {};
         let hasAllParams = true;
-        
+
         field.soqlDependencies.forEach(dep => {
             let val = null;
             if (this.sectionData[rowId] && this.sectionData[rowId][dep] !== undefined) {
@@ -960,7 +974,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             } else {
                 val = this.getGlobalValue(dep);
             }
-            
+
             if (val === undefined || val === null || val === '') {
                 hasAllParams = false;
             }
@@ -972,24 +986,24 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== emptyVal) {
                 this.sectionData[rowId][field.apiName] = emptyVal;
                 this.updateFieldState(rowId, field.apiName, { currentValue: emptyVal, currentDetails: '' });
-                
+
                 // *** EXECUTION ORDER UNIFIED ***
                 this.calculateFormulas();
                 this.applyMatrixRules();
                 this.evaluateVisibility();
             }
-            return; 
+            return;
         }
 
         let safeQuery = field.dynamicSoql.replace(/'?\{([^}]+)\}'?/g, ':$1');
-        
+
         const queryKey = `${rowId}-${field.apiName}`;
         const currentQueryStr = JSON.stringify(bindParams);
         this._activeSoqlQueries[queryKey] = currentQueryStr;
 
         executeDynamicQuery({ soqlQuery: safeQuery, bindParams: bindParams })
             .then(result => {
-                if (this._activeSoqlQueries[queryKey] !== currentQueryStr) return; 
+                if (this._activeSoqlQueries[queryKey] !== currentQueryStr) return;
 
                 let newValue = field.isCheckbox ? false : '';
                 if (result) {
@@ -1007,44 +1021,44 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         newValue = extracted;
                     }
                 }
-                
+
                 if (this.sectionData[rowId] && this.sectionData[rowId][field.apiName] !== newValue) {
                     this.sectionData[rowId][field.apiName] = newValue;
-                    
+
                     if (field.isLookup && newValue) {
                         this.updateFieldState(rowId, field.apiName, { currentValue: 'Resolving...' });
-                        
-                        getRecordDetails({ 
-                            recordId: newValue, 
-                            objectApiName: field.lookupTargetObject, 
-                            searchFields: field.lookupSearchField || 'Name' 
+
+                        getRecordDetails({
+                            recordId: newValue,
+                            objectApiName: field.lookupTargetObject,
+                            searchFields: field.lookupSearchField || 'Name'
                         })
-                        .then(res => {
-                            if (res && res.label) {
-                                this.updateFieldState(rowId, field.apiName, { 
-                                    currentValue: res.label, 
-                                    currentDetails: res.details || '' 
-                                });
-                            } else {
+                            .then(res => {
+                                if (res && res.label) {
+                                    this.updateFieldState(rowId, field.apiName, {
+                                        currentValue: res.label,
+                                        currentDetails: res.details || ''
+                                    });
+                                } else {
+                                    this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
+                                }
+                            })
+                            .catch(() => {
                                 this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
-                            }
-                        })
-                        .catch(() => {
-                            this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
-                        });
+                            });
                     } else {
                         this.updateFieldState(rowId, field.apiName, { currentValue: newValue });
                     }
 
                     this.filterDependencies(rowId, field.apiName, newValue);
-                    
+
                     // *** EXECUTION ORDER UNIFIED ***
                     this.calculateFormulas();
                     this.applyMatrixRules();
                     this.evaluateVisibility();
-                    
-                    this.evaluateDynamicQueries(field.apiName, rowId); 
-                    
+
+                    this.evaluateDynamicQueries(field.apiName, rowId);
+
                     if (field.isLookup) {
                         this.handleReactiveContextChange(field.apiName, newValue);
                     }
@@ -1055,13 +1069,13 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             });
     }
 
-    filterDependencies(rowId, ctrlApi, ctrlVal) { 
+    filterDependencies(rowId, ctrlApi, ctrlVal) {
         for (let sec of this.sections) {
             if (!sec.rows) continue;
             for (let row of sec.rows) {
                 if (row.id === rowId) {
                     for (let f of row.fields) {
-                        if (f.controllerField === ctrlApi) { 
+                        if (f.controllerField === ctrlApi) {
                             let newOptions = [];
                             if (f.dependencyMap && f.dependencyMap[ctrlVal]) {
                                 newOptions = f.dependencyMap[ctrlVal].map(opt => ({ label: String(opt.label), value: String(opt.value) }));
@@ -1071,8 +1085,8 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                 newOptions = [{ label: '--None--', value: '' }, ...newOptions];
                             }
 
-                            f.filteredOptions = newOptions; 
-                            
+                            f.filteredOptions = newOptions;
+
                             if (this.sectionData[rowId] && this.sectionData[rowId][f.apiName]) {
                                 const emptyVal = f.isMultiSelect ? [] : '';
                                 this.sectionData[rowId][f.apiName] = emptyVal;
@@ -1086,7 +1100,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     }
 
     calculateFormulas(isInitialLoad = false) {
-        let triggeredFormulas = []; 
+        let triggeredFormulas = [];
 
         for (let sec of this.sections) {
             if (!sec.rows) continue;
@@ -1106,16 +1120,16 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                     val = this.getGlobalValue(fieldName);
                                 }
 
-                                if (val === undefined || val === null || val === '') return 0; 
+                                if (val === undefined || val === null || val === '') return 0;
                                 return !isNaN(val) ? val : `"${val}"`;
                             });
                             const result = new Function('return ' + parsedExpression)();
-                            
+
                             if (rowData[f.apiName] !== result) {
                                 rowData[f.apiName] = result;
                                 triggeredFormulas.push({ apiName: f.apiName, rowId: row.id });
                             }
-                        } catch (err) {}
+                        } catch (err) { }
                     }
                 }
             }
@@ -1133,44 +1147,44 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         let forceSectionRepaint = false;
         let isStabilized = false;
         let loopCount = 0;
-        let restoredFieldsForSoql = []; 
+        let restoredFieldsForSoql = [];
 
         do {
             isStabilized = true;
             loopCount++;
-            
+
             if (loopCount > 10) {
                 console.warn('Dynamic Form: Visibility evaluation hit stabilization loop limit.');
                 break;
             }
 
-            let dataChangedThisPass = false; 
+            let dataChangedThisPass = false;
 
             for (let i = 0; i < this.sections.length; i++) {
                 let sec = this.sections[i];
                 let secChanged = false;
-                
+
                 let isLogicallyVisible = true;
                 if (sec.visibilityLogic) {
                     try {
                         const logic = JSON.parse(sec.visibilityLogic);
-                        isLogicallyVisible = Boolean(this.checkLogic(logic, null, true)); 
-                    } catch (e) {}
+                        isLogicallyVisible = Boolean(this.checkLogic(logic, null, true));
+                    } catch (e) { }
                 }
-                
+
                 const hasUpload = sec.rows && sec.rows.some(row => row.fields && row.fields.some(f => f.isFileUpload));
                 if (hasUpload && !this.savedRecordId) { isLogicallyVisible = false; }
-                
+
                 if (sec.isLogicallyVisible !== isLogicallyVisible) {
                     sec.isLogicallyVisible = isLogicallyVisible;
                     secChanged = true;
-                    isStabilized = false; 
+                    isStabilized = false;
                 }
 
                 let isWizardVisible = true;
                 if (this.isWizardMode) { isWizardVisible = (i === this.currentStepIndex); }
-                
-                let finalSecVisible = Boolean(sec.isLogicallyVisible && isWizardVisible); 
+
+                let finalSecVisible = Boolean(sec.isLogicallyVisible && isWizardVisible);
 
                 if (this.isSubmitHidden) {
                     finalSecVisible = Boolean(hasUpload);           // only change the display outcome
@@ -1190,7 +1204,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
                 let baseClass = sec.isExpanded ? 'slds-section slds-is-open slds-m-bottom_medium' : 'slds-section slds-m-bottom_medium';
                 if (!sec.isVisible) baseClass += ' slds-hide';
-                
+
                 if (sec.sectionClass !== baseClass) {
                     sec.sectionClass = baseClass;
                     secChanged = true;
@@ -1203,19 +1217,19 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         let fieldsChanged = false;
 
                         for (let f of row.fields) {
-                            
-                            let syncedValue = f.currentValue; 
+
+                            let syncedValue = f.currentValue;
                             if (!f.isLookup && !f.isFileUpload) {
                                 if (this.sectionData[row.id] && this.sectionData[row.id].hasOwnProperty(f.apiName)) {
                                     let storedVal = this.sectionData[row.id][f.apiName];
-                                    if (f.isMultiSelect && typeof storedVal === 'string') { 
-                                        syncedValue = storedVal ? storedVal.split(';') : []; 
-                                    } else { 
-                                        syncedValue = storedVal; 
+                                    if (f.isMultiSelect && typeof storedVal === 'string') {
+                                        syncedValue = storedVal ? storedVal.split(';') : [];
+                                    } else {
+                                        syncedValue = storedVal;
                                     }
                                 }
                             }
-                            
+
                             if (syncedValue === undefined || syncedValue === null) {
                                 syncedValue = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
                             }
@@ -1231,29 +1245,29 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                     fieldsChanged = true;
                                 }
                             }
-                            
+
                             let isFieldLogicVisible = true;
                             if (f.visibilityLogic) {
                                 try {
                                     const logic = JSON.parse(f.visibilityLogic);
                                     isFieldLogicVisible = Boolean(this.checkLogic(logic, this.sectionData[row.id], false));
-                                } catch (e) {}
+                                } catch (e) { }
                             }
 
                             if (sec.allowMultiple && rIndex > 0 && f.isDisplayText) {
                                 isFieldLogicVisible = false;
                             }
-                            
+
                             const finalFieldLogicallyVisible = Boolean(isFieldLogicVisible && sec.isLogicallyVisible);
-                            
+
                             const becameVisible = (f.isVisible === false && finalFieldLogicallyVisible === true);
-                            
+
                             if (f.isVisible !== finalFieldLogicallyVisible) {
                                 f.isVisible = finalFieldLogicallyVisible;
                                 fieldsChanged = true;
                                 isStabilized = false;
                             }
-                            
+
                             const newDisplayClass = finalFieldLogicallyVisible ? '' : 'slds-hide';
                             if (f.cssDisplayClass !== newDisplayClass) {
                                 f.cssDisplayClass = newDisplayClass;
@@ -1264,7 +1278,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             if (!finalFieldLogicallyVisible) {
                                 const emptyVal = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
                                 let currentDataVal = this.sectionData[row.id] ? this.sectionData[row.id][f.apiName] : undefined;
-                                
+
                                 let needsWipe = false;
                                 if (f.isMultiSelect) {
                                     if (Array.isArray(currentDataVal) && currentDataVal.length > 0) needsWipe = true;
@@ -1276,18 +1290,18 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                 if (needsWipe) {
                                     this.sectionData[row.id][f.apiName] = emptyVal;
                                     f.currentValue = emptyVal;
-                                    
+
                                     if (f.isLookup) f.currentDetails = '';
-                                    
+
                                     fieldsChanged = true;
-                                    isStabilized = false; 
+                                    isStabilized = false;
                                     dataChangedThisPass = true;
                                 }
-                            } 
+                            }
                             else if (becameVisible) {
                                 const emptyVal = f.isMultiSelect ? [] : (f.isCheckbox ? false : '');
                                 let currentDataVal = this.sectionData[row.id] ? this.sectionData[row.id][f.apiName] : undefined;
-                                
+
                                 let isEmpty = false;
                                 if (f.isMultiSelect) {
                                     isEmpty = (!Array.isArray(currentDataVal) || currentDataVal.length === 0) && (typeof currentDataVal !== 'string' || currentDataVal === '');
@@ -1298,7 +1312,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                 if (isEmpty && f._restorableValue !== emptyVal && f._restorableValue !== undefined) {
                                     if (!this.sectionData[row.id]) this.sectionData[row.id] = {};
                                     this.sectionData[row.id][f.apiName] = f._restorableValue;
-                                    
+
                                     let newSyncedDisplay = f._restorableDisplayValue;
                                     if (f.isMultiSelect && typeof f._restorableValue === 'string') {
                                         newSyncedDisplay = f._restorableValue ? f._restorableValue.split(';') : [];
@@ -1306,23 +1320,23 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
                                     f.currentValue = newSyncedDisplay;
                                     if (f.isLookup) f.currentDetails = f._restorableDetails;
-                                    
+
                                     fieldsChanged = true;
-                                    isStabilized = false; 
+                                    isStabilized = false;
                                     dataChangedThisPass = true;
-                                    
+
                                     restoredFieldsForSoql.push({ apiName: f.apiName, rowId: row.id, isLookup: f.isLookup });
                                 }
                             }
 
-                            let isFieldRequired = Boolean(f.isStaticRequired); 
+                            let isFieldRequired = Boolean(f.isStaticRequired);
                             if (f.requiredLogic) {
                                 try {
                                     const reqLogic = JSON.parse(f.requiredLogic);
                                     isFieldRequired = isFieldRequired || Boolean(this.checkLogic(reqLogic, this.sectionData[row.id], false));
-                                } catch (e) {}
+                                } catch (e) { }
                             }
-                            
+
                             const finalRequired = Boolean(finalFieldLogicallyVisible) ? isFieldRequired : false;
                             if (f.required !== finalRequired) {
                                 f.required = finalRequired;
@@ -1336,7 +1350,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             rowsChanged = true;
                         }
                     }
-                    
+
                     if (rowsChanged || secChanged) {
                         sec.rows = [...sec.rows];
                         forceSectionRepaint = true;
@@ -1349,7 +1363,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             // *** NEW: Cascade visibility changes instantly into the Matrix rules ***
             if (dataChangedThisPass) {
                 this.calculateFormulas();
-                
+
                 // If the destroyed data changed a matrix cell to readonly, loop again!
                 let matrixWipedData = this.applyMatrixRules();
                 if (matrixWipedData) {
@@ -1405,7 +1419,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         if (logic.operator === 'OR') return logic.conditions.some(c => this.checkLogic(c, dataContext, isGlobal));
         return true;
     }
-    
+
     getGlobalValue(fieldApiName) {
         if (fieldApiName && fieldApiName.startsWith('MATRIX__')) {
             return this.matrixState ? this.matrixState[fieldApiName] : undefined;
@@ -1422,19 +1436,19 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         for (let i = currentIndex + 1; i < this.sections.length; i++) {
             const sec = this.sections[i];
             const hasUpload = sec.rows && sec.rows.some(row => row.fields.some(f => f.isFileUpload));
-            if (hasUpload && !this.savedRecordId) continue; 
+            if (hasUpload && !this.savedRecordId) continue;
             let isLogicVisible = true;
             if (sec.visibilityLogic) { try { const logic = JSON.parse(sec.visibilityLogic); isLogicVisible = this.checkLogic(logic, null, true); } catch (e) { isLogicVisible = false; } }
             if (isLogicVisible) return i;
         }
-        return -1; 
+        return -1;
     }
 
     findPrevVisibleSectionIndex(currentIndex) {
         for (let i = currentIndex - 1; i >= 0; i--) {
             const sec = this.sections[i];
             const hasUpload = sec.rows && sec.rows.some(row => row.fields.some(f => f.isFileUpload));
-            if (hasUpload && !this.savedRecordId) continue; 
+            if (hasUpload && !this.savedRecordId) continue;
             let isLogicVisible = true;
             if (sec.visibilityLogic) { try { const logic = JSON.parse(sec.visibilityLogic); isLogicVisible = this.checkLogic(logic, null, true); } catch (e) { isLogicVisible = false; } }
             if (isLogicVisible) return i;
@@ -1444,63 +1458,63 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
     handleNext() {
         if (!this.validateCurrentStep()) {
-            return; 
+            return;
         }
         const nextIdx = this.findNextVisibleSectionIndex(this.currentStepIndex);
-        if (nextIdx !== -1) { 
-            this.currentStepIndex = nextIdx; 
-            this.evaluateVisibility(); 
+        if (nextIdx !== -1) {
+            this.currentStepIndex = nextIdx;
+            this.evaluateVisibility();
         }
     }
 
     handlePrevious() {
         const prevIdx = this.findPrevVisibleSectionIndex(this.currentStepIndex);
-        if (prevIdx !== -1) { 
-            this.currentStepIndex = prevIdx; 
-            this.evaluateVisibility(); 
+        if (prevIdx !== -1) {
+            this.currentStepIndex = prevIdx;
+            this.evaluateVisibility();
         }
     }
 
-    handleCancel() { 
+    handleCancel() {
         if (this.isLoading) return;
-        
+
         const isSafeToRollback = (
-            !this.isEditMode && 
-            this.savedRecordId && 
+            !this.isEditMode &&
+            this.savedRecordId &&
             this._isSaveCommitted
         );
 
-        if (isSafeToRollback) { 
-            this.isLoading = true; 
-            rollbackTransaction({ 
+        if (isSafeToRollback) {
+            this.isLoading = true;
+            rollbackTransaction({
                 recordId: this.savedRecordId,
                 childIds: this._rollbackChildIds,
                 saveWithoutSharing: this.saveWithoutSharing
             })
-            .then(() => { 
-                this.showToast('Success', 'Submission cancelled. Record rolled back.', 'info'); 
-                this.navigateBack(); 
-            })
-            .catch(error => { 
-                this.showToast('Error', 'Failed to rollback: ' + (error.body ? error.body.message : error.message), 'error'); 
-            })
-            .finally(() => {
-                this.isLoading = false;
-            }); 
-        } else { 
-            this.navigateBack(); 
-        } 
+                .then(() => {
+                    this.showToast('Success', 'Submission cancelled. Record rolled back.', 'info');
+                    this.navigateBack();
+                })
+                .catch(error => {
+                    this.showToast('Error', 'Failed to rollback: ' + (error.body ? error.body.message : error.message), 'error');
+                })
+                .finally(() => {
+                    this.isLoading = false;
+                });
+        } else {
+            this.navigateBack();
+        }
     }
 
     handleAddRow(event) {
         const sectionId = event.target.dataset.id;
         let targetSection = this.sections.find(s => s.id === sectionId);
         if (!targetSection) return;
-        
+
         const newUuid = generateUuid();
         this.sectionData[newUuid] = {};
-        
-        const templateFields = targetSection.rows[0].fields; 
+
+        const templateFields = targetSection.rows[0].fields;
         const newFields = templateFields.map(f => {
             let newVal = '';
             let newDisplay = '';
@@ -1517,54 +1531,54 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             }
             if (newVal) this.sectionData[newUuid][f.apiName] = newVal;
             else if (f.defaultValue) {
-                if (f.type && f.type.toLowerCase() === 'checkbox') { this.sectionData[newUuid][f.apiName] = (f.defaultValue.toLowerCase() === 'true'); } 
+                if (f.type && f.type.toLowerCase() === 'checkbox') { this.sectionData[newUuid][f.apiName] = (f.defaultValue.toLowerCase() === 'true'); }
                 else { this.sectionData[newUuid][f.apiName] = f.defaultValue; }
             } else { this.sectionData[newUuid][f.apiName] = (f.type === 'Checkbox') ? false : ''; }
-            
+
             let newFilteredOpts = [];
             if (f.filteredOptions) {
                 newFilteredOpts = f.filteredOptions.map(opt => ({ label: String(opt.label), value: String(opt.value) }));
             }
-            
-            return { 
-                ...f, 
-                currentValue: newDisplay, 
-                lookupOptions: [], 
-                showLookupOptions: false, 
-                uploadedFiles: [], 
-                filteredOptions: newFilteredOpts, 
+
+            return {
+                ...f,
+                currentValue: newDisplay,
+                lookupOptions: [],
+                showLookupOptions: false,
+                uploadedFiles: [],
+                filteredOptions: newFilteredOpts,
                 cssDisplayClass: '',
-                _restorableValue: newVal,               
-                _restorableDisplayValue: newDisplay,    
-                _restorableDetails: ''                  
+                _restorableValue: newVal,
+                _restorableDisplayValue: newDisplay,
+                _restorableDetails: ''
             };
         });
-        
+
         const newRow = { id: newUuid, label: `Item #${targetSection.rows.length + 1}`, fields: newFields, isRemovable: true };
         targetSection.rows = [...targetSection.rows, newRow];
-        
-        this.sectionData = { ...this.sectionData }; 
-        this.sections = [...this.sections]; 
-        
-        this.evaluateVisibility(); 
+
+        this.sectionData = { ...this.sectionData };
+        this.sections = [...this.sections];
+
+        this.evaluateVisibility();
     }
 
     handleRemoveRow(event) {
-        const rowId = event.currentTarget.dataset.rowid; 
-        const sectionId = event.currentTarget.dataset.secid; 
+        const rowId = event.currentTarget.dataset.rowid;
+        const sectionId = event.currentTarget.dataset.secid;
         if (this.sectionData[rowId] && this.sectionData[rowId].Id) this._recordsToDelete.push(this.sectionData[rowId].Id);
-        
+
         const sec = this.sections.find(s => s.id === sectionId);
         if (sec) {
             sec.rows = sec.rows.filter(r => r.id !== rowId);
             sec.rows.forEach((r, idx) => { r.label = idx === 0 ? 'Item #1' : `Item #${idx + 1}`; });
         }
         delete this.sectionData[rowId];
-        
-        this.sectionData = { ...this.sectionData }; 
-        this.sections = [...this.sections]; 
-        
-        this.evaluateVisibility(); 
+
+        this.sectionData = { ...this.sectionData };
+        this.sections = [...this.sections];
+
+        this.evaluateVisibility();
     }
 
     handleReactiveContextChange(controllingFieldApi, newRecordId) {
@@ -1572,7 +1586,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         let sourceFieldsToQuery = [];
 
         this.sections.forEach(sec => {
-            if(!sec.isStandardSection || !sec.rows) return;
+            if (!sec.isStandardSection || !sec.rows) return;
             sec.rows.forEach(row => {
                 row.fields.forEach(f => {
                     if (f.controllingLookup === controllingFieldApi) {
@@ -1597,10 +1611,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     currentValue: emptyVal,
                     currentDetails: ''
                 });
-                
+
                 this.evaluateDynamicQueries(dep.field.apiName, dep.rowId);
             });
-            
+
             // *** EXECUTION ORDER UNIFIED ***
             this.calculateFormulas();
             this.applyMatrixRules();
@@ -1610,38 +1624,38 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
         if (sourceFieldsToQuery.length > 0) {
             this.isLoading = true;
-            getSourceRecordData({ 
-                sourceRecordId: newRecordId, 
-                sourceFields: Array.from(new Set(sourceFieldsToQuery)) 
+            getSourceRecordData({
+                sourceRecordId: newRecordId,
+                sourceFields: Array.from(new Set(sourceFieldsToQuery))
             })
-            .then(sourceData => {
-                dependentFieldsToFetch.forEach(dep => {
-                    const f = dep.field;
-                    if (f.sourceFieldApiName && sourceData && sourceData[f.sourceFieldApiName]) {
-                        const fetchedInfo = sourceData[f.sourceFieldApiName];
-                        
-                        if (!this.sectionData[dep.rowId]) this.sectionData[dep.rowId] = {};
-                        this.sectionData[dep.rowId][f.apiName] = fetchedInfo.value;
+                .then(sourceData => {
+                    dependentFieldsToFetch.forEach(dep => {
+                        const f = dep.field;
+                        if (f.sourceFieldApiName && sourceData && sourceData[f.sourceFieldApiName]) {
+                            const fetchedInfo = sourceData[f.sourceFieldApiName];
 
-                        this.updateFieldState(dep.rowId, f.apiName, {
-                            currentValue: fetchedInfo.label || fetchedInfo.value,
-                            currentDetails: '' 
-                        });
+                            if (!this.sectionData[dep.rowId]) this.sectionData[dep.rowId] = {};
+                            this.sectionData[dep.rowId][f.apiName] = fetchedInfo.value;
 
-                        this.evaluateDynamicQueries(f.apiName, dep.rowId);
-                    }
+                            this.updateFieldState(dep.rowId, f.apiName, {
+                                currentValue: fetchedInfo.label || fetchedInfo.value,
+                                currentDetails: ''
+                            });
+
+                            this.evaluateDynamicQueries(f.apiName, dep.rowId);
+                        }
+                    });
+
+                    // *** EXECUTION ORDER UNIFIED ***
+                    this.calculateFormulas();
+                    this.applyMatrixRules();
+                    this.evaluateVisibility();
+                    this.fetchMissingLookupDetails();
+                })
+                .catch(err => { })
+                .finally(() => {
+                    this.isLoading = false;
                 });
-                
-                // *** EXECUTION ORDER UNIFIED ***
-                this.calculateFormulas();
-                this.applyMatrixRules();
-                this.evaluateVisibility();
-                this.fetchMissingLookupDetails(); 
-            })
-            .catch(err => {})
-            .finally(() => {
-                this.isLoading = false;
-            });
         }
     }
 
@@ -1656,14 +1670,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         const rowId = event.currentTarget.dataset.row;
         const searchTerm = event.target.value;
         const field = this.findField(fieldApi, rowId);
-        if (!field) return; 
+        if (!field) return;
         if (event.target.setCustomValidity) { event.target.setCustomValidity(''); event.target.reportValidity(); }
-        
+
         let idChanged = false;
         if (this.sectionData[rowId] && this.sectionData[rowId][fieldApi]) {
-            this.sectionData[rowId][fieldApi] = ''; 
+            this.sectionData[rowId][fieldApi] = '';
             idChanged = true;
-            this.handleReactiveContextChange(fieldApi, null); 
+            this.handleReactiveContextChange(fieldApi, null);
         }
 
         const debounceKey = `${rowId}-${fieldApi}`;
@@ -1696,10 +1710,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             this.evaluateVisibility();
         }
 
-        if (searchTerm.length >= 2) {
+        if (searchTerm.length >= 3) {
             if (!this._activeSearchTerms) this._activeSearchTerms = {};
             this._activeSearchTerms[debounceKey] = searchTerm;
 
+            // Require 3+ chars to reduce noise from single-keystroke searches; combined with 300ms debounce, this prevents ~50% of unnecessary Apex calls.
             // Debounce so a fast typist fires one Apex/search-index call instead of one per keystroke.
             this._lookupSearchTimers[debounceKey] = setTimeout(() => {
                 searchRecords({ searchTerm, objectApiName: field.lookupTargetObject, searchFields: field.lookupSearchField }).then(res => {
@@ -1722,7 +1737,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             }, 300);
         }
     }
-    
+
     handleLookupSelect(event) {
         event.preventDefault();
         const fieldApi = event.currentTarget.dataset.api;
@@ -1756,30 +1771,30 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     handleBlur(event) {
         const fieldApi = event.currentTarget.dataset.api;
         const rowId = event.currentTarget.dataset.row;
-        
+
         this._activeLookup = null;
 
-        setTimeout(() => { 
+        setTimeout(() => {
             const hasValidId = this.sectionData[rowId] && this.sectionData[rowId][fieldApi];
             const field = this.findField(fieldApi, rowId);
             if (!field) return;
 
             let newValue = hasValidId ? field.currentValue : '';
-            let newDetails = hasValidId ? field.currentDetails : ''; 
-            
-            this.updateFieldState(rowId, fieldApi, { 
-                currentValue: newValue, 
-                currentDetails: newDetails, 
-                showLookupOptions: false, 
-                lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click' 
-            }); 
-            
+            let newDetails = hasValidId ? field.currentDetails : '';
+
+            this.updateFieldState(rowId, fieldApi, {
+                currentValue: newValue,
+                currentDetails: newDetails,
+                showLookupOptions: false,
+                lookupClass: 'slds-combobox slds-dropdown-trigger slds-dropdown-trigger_click'
+            });
+
             const inputCmp = this.template.querySelector(`lightning-input[data-row="${rowId}"][data-api="${fieldApi}"]`);
-            if(inputCmp) inputCmp.reportValidity();
+            if (inputCmp) inputCmp.reportValidity();
 
         }, 300);
     }
-    
+
     handleCustomFileUpload(event) {
         const files = event.target.files;
         const rowId = event.target.dataset.row;
@@ -1804,14 +1819,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 let reader = new FileReader();
                 reader.onload = () => {
                     let base64 = reader.result.split(',')[1];
-                    uploadFile({ 
-                        parentId: this.savedRecordId, 
-                        fileName: file.name, 
+                    uploadFile({
+                        parentId: this.savedRecordId,
+                        fileName: file.name,
                         base64Data: base64,
-                        saveWithoutSharing: this.saveWithoutSharing 
+                        saveWithoutSharing: this.saveWithoutSharing
                     })
-                    .then(documentId => { resolve({ name: file.name, documentId: documentId }); })
-                    .catch(error => { reject(error); });
+                        .then(documentId => { resolve({ name: file.name, documentId: documentId }); })
+                        .catch(error => { reject(error); });
                 };
                 reader.readAsDataURL(file);
             });
@@ -1825,7 +1840,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     this.showToast('Success', `${uploadedResults.length} file(s) uploaded successfully.`, 'success');
                     let filesAdded = false;
                     for (let sec of this.sections) {
-                        if(!sec.rows) continue;
+                        if (!sec.rows) continue;
                         for (let row of sec.rows) {
                             if (row.id === rowId) {
                                 for (let f of row.fields) {
@@ -1838,7 +1853,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                             }
                         }
                     }
-                    if (filesAdded) this.evaluateVisibility(); 
+                    if (filesAdded) this.evaluateVisibility();
                 }
             })
             .catch(error => {
@@ -1851,10 +1866,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         const uploadedFiles = event.detail.files;
         const fieldApi = event.target.dataset.api;
         const rowId = event.target.dataset.row;
-        
+
         let filesAdded = false;
         for (let sec of this.sections) {
-            if(!sec.rows) continue;
+            if (!sec.rows) continue;
             for (let row of sec.rows) {
                 if (row.id === rowId) {
                     for (let f of row.fields) {
@@ -1867,25 +1882,25 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 }
             }
         }
-        if (filesAdded) this.evaluateVisibility(); 
+        if (filesAdded) this.evaluateVisibility();
         this.showToast('Success', `${uploadedFiles.length} ${this.labels.msgUploadSuccess}`, 'success');
     }
 
     handleFileRemove(event) {
-        const docId = event.target.name; 
+        const docId = event.target.name;
         const rowId = event.target.dataset.row;
         const fieldApi = event.target.dataset.api;
         this.isLoading = true;
-        
-        deleteRecord({ 
+
+        deleteRecord({
             recordId: docId,
-            saveWithoutSharing: this.saveWithoutSharing 
+            saveWithoutSharing: this.saveWithoutSharing
         }).then(() => {
             this.isLoading = false;
             this.showToast('Success', 'File deleted.', 'success');
             let filesRemoved = false;
             for (let sec of this.sections) {
-                if(!sec.rows) continue;
+                if (!sec.rows) continue;
                 for (let row of sec.rows) {
                     if (row.id === rowId) {
                         for (let f of row.fields) {
@@ -1898,14 +1913,14 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     }
                 }
             }
-            if (filesRemoved) this.evaluateVisibility(); 
-        }).catch(error => { 
-            this.isLoading = false; 
-            this.showToast('Error', 'Could not delete file: ' + error.body.message, 'error'); 
+            if (filesRemoved) this.evaluateVisibility();
+        }).catch(error => {
+            this.isLoading = false;
+            this.showToast('Error', 'Could not delete file: ' + error.body.message, 'error');
         });
     }
 
-    updateFieldState(rowId, apiName, newState) { 
+    updateFieldState(rowId, apiName, newState) {
         let sectionsChanged = false;
         for (let sec of this.sections) {
             if (!sec.rows) continue;
@@ -1938,37 +1953,37 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             this.sections = [...this.sections];
         }
     }
-    
-    navigateBack() { 
-        this.dispatchEvent(new CustomEvent('close', { detail: { recordId: null } })); 
+
+    navigateBack() {
+        this.dispatchEvent(new CustomEvent('close', { detail: { recordId: null } }));
     }
 
     closeFormAndNavigate() {
         this.dispatchEvent(new CustomEvent('close', { detail: { recordId: this.savedRecordId } }));
     }
 
-    handleFinish() { 
-        if (this.savedRecordId) { 
-            notifyRecordUpdateAvailable([{recordId: this.savedRecordId}]); 
-            this.closeFormAndNavigate(); 
-        } 
+    handleFinish() {
+        if (this.savedRecordId) {
+            notifyRecordUpdateAvailable([{ recordId: this.savedRecordId }]);
+            this.closeFormAndNavigate();
+        }
     }
-    
+
     enterUploadMode() {
         this.evaluateVisibility();
     }
-    
+
     resetForm() {
         if (!this._cachedMetadata) { window.location.reload(); return; }
-        this.isLoading = true; this.savedRecordId = null; this.isSubmitHidden = false; this.sectionData = {}; 
-        this.matrixState = {}; 
+        this.isLoading = true; this.savedRecordId = null; this.isSubmitHidden = false; this.sectionData = {};
+        this.matrixState = {};
         this.sections = [];
-        this._rollbackChildIds = []; 
+        this._rollbackChildIds = [];
         setTimeout(() => {
             if (this.recordId && this._cachedMetadata) {
-                 const queryConfig = this.buildQueryConfig(this._cachedMetadata.sections, this._formTargetObject);
-                 getExistingRecordData({ recordId: this.recordId, objectApiName: this._formTargetObject, queryConfigJson: JSON.stringify(queryConfig) })
-                 .then(existingData => { if (existingData) { this.buildForm(this._cachedMetadata.sections, this._formTargetObject, existingData); } else { this.handleCreateMode(this._cachedMetadata); } });
+                const queryConfig = this.buildQueryConfig(this._cachedMetadata.sections, this._formTargetObject);
+                getExistingRecordData({ recordId: this.recordId, objectApiName: this._formTargetObject, queryConfigJson: JSON.stringify(queryConfig) })
+                    .then(existingData => { if (existingData) { this.buildForm(this._cachedMetadata.sections, this._formTargetObject, existingData); } else { this.handleCreateMode(this._cachedMetadata); } });
             } else { this.handleCreateMode(this._cachedMetadata); }
         }, 100);
     }
@@ -1983,16 +1998,16 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             const secId = input.dataset.secid;
             const apiName = input.dataset.api;
             const rowId = input.dataset.row;
-            
+
             const sec = this.sections.find(s => s.id === secId);
-            if (!sec || !sec.isVisible) return; 
+            if (!sec || !sec.isVisible) return;
 
             let field = null;
             if (sec.rows) {
                 const row = sec.rows.find(r => r.id === rowId);
                 if (row) field = row.fields.find(f => f.apiName === apiName);
             }
-            if (!field || !field.isVisible) return; 
+            if (!field || !field.isVisible) return;
 
             if (input.type === 'search') {
                 const domValue = input.value;
@@ -2006,10 +2021,10 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     isValid = false;
                     if (secId) invalidSectionIds.add(secId);
                 } else {
-                    input.setCustomValidity(''); 
+                    input.setCustomValidity('');
                 }
             }
-            
+
             if (!input.checkValidity()) {
                 isValid = false;
                 if (secId) invalidSectionIds.add(secId);
@@ -2023,7 +2038,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     sec.sectionClass = 'slds-section slds-is-open slds-m-bottom_medium';
                 }
             }
-            this.sections = [...this.sections]; 
+            this.sections = [...this.sections];
         }
 
         setTimeout(() => {
@@ -2032,23 +2047,23 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 const secId = input.dataset.secid;
                 const apiName = input.dataset.api;
                 const rowId = input.dataset.row;
-                
+
                 const sec = this.sections.find(s => s.id === secId);
-                if (!sec || !sec.isVisible) return; 
-                
+                if (!sec || !sec.isVisible) return;
+
                 let field = null;
                 if (sec.rows) {
                     const row = sec.rows.find(r => r.id === rowId);
                     if (row) field = row.fields.find(f => f.apiName === apiName);
                 }
-                if (!field || !field.isVisible) return; 
-                
+                if (!field || !field.isVisible) return;
+
                 input.reportValidity();
             });
         }, 100);
 
         const visibleSections = this.isWizardMode ? (this.sections[this.currentStepIndex] ? [this.sections[this.currentStepIndex]] : []) : this.sections.filter(s => s.isVisible);
-        
+
         for (const sec of visibleSections) {
             if (sec && sec.isMatrix && sec.isRequired) {
                 let hasData = false;
@@ -2076,7 +2091,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     sec.sectionClass = 'slds-section slds-is-open slds-m-bottom_medium';
                 }
             }
-            this.sections = [...this.sections]; 
+            this.sections = [...this.sections];
             this.showToast('Error', `Please provide at least one entry in the "${matrixErrorLabel}" section.`, 'error');
         } else if (!isValid) {
             this.showToast('Error', 'Please correct the errors on this step.', 'error');
@@ -2086,11 +2101,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
     }
 
     handleSubmit(event) {
-        if (this.isLoading) return; 
+        if (this.isLoading) return;
         const isQuickFinish = event.target.dataset.mode === 'finish';
-        
+
         if (!this.validateCurrentStep()) {
-            return; 
+            return;
         }
 
         let firstErrorStepIndex = -1;
@@ -2098,7 +2113,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
         let errorSectionId = null;
 
         this.sections.forEach((sec, index) => {
-            if (!sec.isLogicallyVisible) return; 
+            if (!sec.isLogicallyVisible) return;
 
             if (sec.isMatrix) {
                 if (sec.isRequired) {
@@ -2120,12 +2135,12 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         }
                     }
                 }
-            } 
+            }
             else if (sec.isStandardSection && sec.rows) {
                 sec.rows.forEach(row => {
                     const rowData = this.sectionData[row.id];
                     row.fields.forEach(field => {
-                        if (!field.isVisible) return; 
+                        if (!field.isVisible) return;
 
                         const val = rowData[field.apiName];
                         let isEmpty = (val === null || val === undefined || val === '');
@@ -2140,7 +2155,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                                 errorSectionId = sec.id;
                             }
                         }
-                        
+
                         if (field.isLookup) {
                             const text = field.currentValue;
                             if (isEmpty && text && text.trim().length > 0) {
@@ -2160,7 +2175,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 this.currentStepIndex = firstErrorStepIndex;
                 this.evaluateVisibility();
             }
-            
+
             if (errorSectionId) {
                 for (let sec of this.sections) {
                     if (sec.id === errorSectionId && !sec.isExpanded) {
@@ -2168,17 +2183,17 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                         sec.sectionClass = 'slds-section slds-is-open slds-m-bottom_medium';
                     }
                 }
-                this.sections = [...this.sections]; 
+                this.sections = [...this.sections];
             }
 
-            setTimeout(() => { this.validateCurrentStep(); }, 100); 
+            setTimeout(() => { this.validateCurrentStep(); }, 100);
             return;
         }
 
         let primarySections = [];
         let dependentSections = [];
         this.sections.forEach(sec => {
-            if (!sec.isLogicallyVisible) return; 
+            if (!sec.isLogicallyVisible) return;
             if (sec.parentSectionDevName) { dependentSections.push(sec); } else { primarySections.push(sec); }
         });
 
@@ -2193,11 +2208,11 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 const matrixObjName = sec.objectApiName || 'Form_Matrix_Entry__c';
                 ensurePayloadBucket(matrixObjName, true);
                 if (sec.relationshipParentField) { relationshipMap[matrixObjName] = sec.relationshipParentField; }
-                if(sec.matrixRows) {
+                if (sec.matrixRows) {
                     sec.matrixRows.forEach(r => {
                         r.cells.forEach(c => {
                             if (c.recordId && (c.value === '' || c.value === null || c.value === undefined || c.value === 'false')) {
-                                dynamicRecordsToDelete.push(c.recordId); 
+                                dynamicRecordsToDelete.push(c.recordId);
                             } else if (c.value !== '' && c.value !== null && c.value !== undefined && c.value !== 'false') {
                                 payload[matrixObjName].push({
                                     Id: c.recordId, Section_Key__c: sec.developerName,
@@ -2210,21 +2225,21 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             } else if (sec.allowMultiple) {
                 const objName = sec.targetObject;
                 if (sec.relationshipParentField) relationshipMap[objName] = sec.relationshipParentField;
-                ensurePayloadBucket(objName, true); 
+                ensurePayloadBucket(objName, true);
                 let sectionPayloads = [];
-                if(sec.rows) {
+                if (sec.rows) {
                     sec.rows.forEach(row => {
                         const rowData = { ...this.sectionData[row.id] };
                         let hasUserValue = false;
                         row.fields.forEach(f => {
                             if (!f.isVisible) {
-                                delete rowData[f.apiName]; 
+                                delete rowData[f.apiName];
                                 return;
                             }
                             const val = rowData[f.apiName];
                             if (!f.saveToDb) { delete rowData[f.apiName]; }
-                            else if (val !== null && val !== undefined) { 
-                                if (val !== '' && val !== false && !f.prepopulate && !f.isFileUpload) { hasUserValue = true; } 
+                            else if (val !== null && val !== undefined) {
+                                if (val !== '' && val !== false && !f.prepopulate && !f.isFileUpload) { hasUserValue = true; }
                             }
                         });
                         if (hasUserValue || rowData.Id) {
@@ -2240,18 +2255,18 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                     const rowData = this.sectionData[row.id];
                     const sectionTargetObj = sec.targetObject || this._formTargetObject;
                     row.fields.forEach(f => {
-                        if (!f.saveToDb || !f.isVisible) return; 
+                        if (!f.saveToDb || !f.isVisible) return;
                         const targetObj = f.targetObject || this._formTargetObject;
                         const relField = f.parentRelationshipField;
                         if (targetObj !== this._formTargetObject && relField) { relationshipMap[targetObj] = relField; }
                         const val = rowData[f.apiName];
                         if (val !== null && val !== undefined && !f.isFileUpload) {
-                            ensurePayloadBucket(targetObj, false); 
+                            ensurePayloadBucket(targetObj, false);
                             payload[targetObj][f.apiName] = val;
-                            
+
                             if (targetObj !== this._formTargetObject && !payload[targetObj]['Id']) {
-                                if (this._serverData && this._serverData.children && 
-                                    this._serverData.children[targetObj] && 
+                                if (this._serverData && this._serverData.children &&
+                                    this._serverData.children[targetObj] &&
                                     this._serverData.children[targetObj].length > 0) {
                                     payload[targetObj]['Id'] = this._serverData.children[targetObj][0].Id;
                                 }
@@ -2275,7 +2290,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
             if (Array.isArray(payload[key])) {
                 if (payload[key].length === 0) delete payload[key];
             } else {
-                if (key !== this._formTargetObject) { 
+                if (key !== this._formTargetObject) {
                     if (!payload[key].Id && !payload[key].id) {
                         let hasRealData = false;
                         for (let fName in payload[key]) {
@@ -2302,7 +2317,7 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
                 const parentSec = this.sections.find(s => s.developerName === matrixSec.parentSectionDevName);
                 if (parentSec) {
                     let effectiveTargetObj = parentSec.targetObject || parentSec.objectApiName;
-                    
+
                     if (effectiveTargetObj === this._formTargetObject) {
                         if (parentSec.rows && parentSec.rows.length > 0) {
                             const childField = parentSec.rows[0].fields.find(f => f.targetObject && f.targetObject !== this._formTargetObject);
@@ -2323,154 +2338,154 @@ export default class DynamicForm extends NavigationMixin(LightningElement) {
 
                     if (!isParentValid) {
                         this.showToast('Error', `Cannot save ${matrixSec.label}. Please enter data for the parent record first.`, 'error');
-                        return; 
+                        return;
                     }
                 }
             }
         }
 
-        if (Object.keys(payload).length === 0 && dynamicRecordsToDelete.length === 0) { 
-             if (dependentSections.length === 0) {
-                this.showToast('Error', 'No data found. Please fill in at least one field.', 'error'); return; 
-             }
+        if (Object.keys(payload).length === 0 && dynamicRecordsToDelete.length === 0) {
+            if (dependentSections.length === 0) {
+                this.showToast('Error', 'No data found. Please fill in at least one field.', 'error'); return;
+            }
         }
-        
+
         this.isLoading = true;
-        
-        saveMultiObject({ 
-            parentObjectApiName: this._formTargetObject, 
-            payload: payload, 
-            relationshipMap: relationshipMap, 
+
+        saveMultiObject({
+            parentObjectApiName: this._formTargetObject,
+            payload: payload,
+            relationshipMap: relationshipMap,
             recordsToDelete: Array.from(new Set(dynamicRecordsToDelete)),
-            saveWithoutSharing: this.saveWithoutSharing 
+            saveWithoutSharing: this.saveWithoutSharing
         })
-        .then(result => { 
-            this.savedRecordId = result.parentId;
-            this._isSaveCommitted = true; 
-            
-            if (result.allInsertedChildIds && Array.isArray(result.allInsertedChildIds)) {
-                this._rollbackChildIds = [...this._rollbackChildIds, ...result.allInsertedChildIds];
-            }
+            .then(result => {
+                this.savedRecordId = result.parentId;
+                this._isSaveCommitted = true;
 
-            const childIdMap = result.childIds || {}; 
-
-            let phase2Promises = [];
-            let sectionsByParent = {};
-            dependentSections.forEach(sec => {
-                if (!sectionsByParent[sec.parentSectionDevName]) { sectionsByParent[sec.parentSectionDevName] = []; }
-                sectionsByParent[sec.parentSectionDevName].push(sec);
-            });
-
-            Object.keys(sectionsByParent).forEach(parentDevName => {
-                const parentSec = this.sections.find(s => s.developerName === parentDevName);
-                if (!parentSec) return;
-                
-                let targetObj = parentSec.targetObject || parentSec.objectApiName; 
-                
-                if (targetObj === this._formTargetObject) {
-                     if (parentSec.rows && parentSec.rows.length > 0) {
-                        const childField = parentSec.rows[0].fields.find(f => f.targetObject && f.targetObject !== this._formTargetObject);
-                        if (childField) {
-                            targetObj = childField.targetObject;
-                        }
-                    }
+                if (result.allInsertedChildIds && Array.isArray(result.allInsertedChildIds)) {
+                    this._rollbackChildIds = [...this._rollbackChildIds, ...result.allInsertedChildIds];
                 }
 
-                const newParentId = childIdMap[targetObj] || childIdMap[targetObj.toLowerCase()];
+                const childIdMap = result.childIds || {};
 
-                if (newParentId) {
-                    let batchPayload = {};
-                    let batchRelMap = {};
-                    let batchRecordsToDelete = [];
-                    batchPayload[targetObj] = { Id: newParentId };
+                let phase2Promises = [];
+                let sectionsByParent = {};
+                dependentSections.forEach(sec => {
+                    if (!sectionsByParent[sec.parentSectionDevName]) { sectionsByParent[sec.parentSectionDevName] = []; }
+                    sectionsByParent[sec.parentSectionDevName].push(sec);
+                });
 
-                    sectionsByParent[parentDevName].forEach(sec => {
-                        if (!sec.isMatrix) return;
-                        const matrixObjName = sec.objectApiName || 'Form_Matrix_Entry__c';
-                        if (!batchPayload[matrixObjName]) batchPayload[matrixObjName] = [];
-                        if (sec.relationshipParentField) { batchRelMap[matrixObjName] = sec.relationshipParentField; }
+                Object.keys(sectionsByParent).forEach(parentDevName => {
+                    const parentSec = this.sections.find(s => s.developerName === parentDevName);
+                    if (!parentSec) return;
 
-                        if(sec.matrixRows){
-                            sec.matrixRows.forEach(r => {
-                                r.cells.forEach(c => {
-                                    if (c.recordId && (c.value === '' || c.value === null || c.value === undefined || c.value === 'false')) {
-                                        batchRecordsToDelete.push(c.recordId);
-                                    }
-                                    else if (c.value !== '' && c.value !== null && c.value !== undefined && c.value !== 'false') {
-                                        let record = {
-                                            Id: c.recordId, Section_Key__c: sec.developerName,
-                                            Row_Key__c: c.rowKey, Column_Key__c: c.colKey, Value__c: c.value
-                                        };
-                                        if (sec.relationshipParentField) { record[sec.relationshipParentField] = newParentId; }
-                                        batchPayload[matrixObjName].push(record);
-                                    }
+                    let targetObj = parentSec.targetObject || parentSec.objectApiName;
+
+                    if (targetObj === this._formTargetObject) {
+                        if (parentSec.rows && parentSec.rows.length > 0) {
+                            const childField = parentSec.rows[0].fields.find(f => f.targetObject && f.targetObject !== this._formTargetObject);
+                            if (childField) {
+                                targetObj = childField.targetObject;
+                            }
+                        }
+                    }
+
+                    const newParentId = childIdMap[targetObj] || childIdMap[targetObj.toLowerCase()];
+
+                    if (newParentId) {
+                        let batchPayload = {};
+                        let batchRelMap = {};
+                        let batchRecordsToDelete = [];
+                        batchPayload[targetObj] = { Id: newParentId };
+
+                        sectionsByParent[parentDevName].forEach(sec => {
+                            if (!sec.isMatrix) return;
+                            const matrixObjName = sec.objectApiName || 'Form_Matrix_Entry__c';
+                            if (!batchPayload[matrixObjName]) batchPayload[matrixObjName] = [];
+                            if (sec.relationshipParentField) { batchRelMap[matrixObjName] = sec.relationshipParentField; }
+
+                            if (sec.matrixRows) {
+                                sec.matrixRows.forEach(r => {
+                                    r.cells.forEach(c => {
+                                        if (c.recordId && (c.value === '' || c.value === null || c.value === undefined || c.value === 'false')) {
+                                            batchRecordsToDelete.push(c.recordId);
+                                        }
+                                        else if (c.value !== '' && c.value !== null && c.value !== undefined && c.value !== 'false') {
+                                            let record = {
+                                                Id: c.recordId, Section_Key__c: sec.developerName,
+                                                Row_Key__c: c.rowKey, Column_Key__c: c.colKey, Value__c: c.value
+                                            };
+                                            if (sec.relationshipParentField) { record[sec.relationshipParentField] = newParentId; }
+                                            batchPayload[matrixObjName].push(record);
+                                        }
+                                    });
                                 });
-                            });
-                        }
-                    });
+                            }
+                        });
 
-                    if (Object.keys(batchPayload).length > 1 || batchRecordsToDelete.length > 0) { 
-                        phase2Promises.push(
-                            saveMultiObject({ 
-                                parentObjectApiName: targetObj, 
-                                payload: batchPayload, 
-                                relationshipMap: batchRelMap, 
-                                recordsToDelete: Array.from(new Set(batchRecordsToDelete)),
-                                saveWithoutSharing: this.saveWithoutSharing
-                            })
-                        );
-                    }
-                }
-            });
-            return Promise.all(phase2Promises);
-        })
-        .then((phase2Results) => {
-            if (phase2Results && phase2Results.length > 0) {
-                phase2Results.forEach(res => {
-                    if (res && res.allInsertedChildIds && Array.isArray(res.allInsertedChildIds)) {
-                        this._rollbackChildIds = [...this._rollbackChildIds, ...res.allInsertedChildIds];
+                        if (Object.keys(batchPayload).length > 1 || batchRecordsToDelete.length > 0) {
+                            phase2Promises.push(
+                                saveMultiObject({
+                                    parentObjectApiName: targetObj,
+                                    payload: batchPayload,
+                                    relationshipMap: batchRelMap,
+                                    recordsToDelete: Array.from(new Set(batchRecordsToDelete)),
+                                    saveWithoutSharing: this.saveWithoutSharing
+                                })
+                            );
+                        }
                     }
                 });
-            }
-
-            this.isLoading = false; 
-            notifyRecordUpdateAvailable([{recordId: this.savedRecordId}]);
-            
-            if (this.isEditMode || isQuickFinish) { 
-                this.showToast('Success', this.labels.msgRecordSaved, 'success'); 
-                this.closeFormAndNavigate(); 
-            } else { 
-                this.isSubmitHidden = true; 
-                this.enterUploadMode();
-                this.showToast('Success', this.labels.msgRecordSavedUpload, 'success'); 
-            }
-        })
-        .catch(error => { 
-            console.error('Submission Error:', error);
-            
-            if (!this.isEditMode && this.savedRecordId && this._isSaveCommitted) {
-                this.isLoading = true;
-                rollbackTransaction({ 
-                    recordId: this.savedRecordId,
-                    childIds: this._rollbackChildIds,
-                    saveWithoutSharing: this.saveWithoutSharing
-                })
-                    .then(() => {
-                        this.showToast('Error', 'Submission failed. Record rolled back.', 'error');
-                        this.savedRecordId = null;
-                        this._isSaveCommitted = false; 
-                    })
-                    .catch(delErr => {
-                        this.showToast('Error', 'Submission failed and rollback failed. Please contact admin.', 'error');
-                    })
-                    .finally(() => {
-                        this.isLoading = false;
+                return Promise.all(phase2Promises);
+            })
+            .then((phase2Results) => {
+                if (phase2Results && phase2Results.length > 0) {
+                    phase2Results.forEach(res => {
+                        if (res && res.allInsertedChildIds && Array.isArray(res.allInsertedChildIds)) {
+                            this._rollbackChildIds = [...this._rollbackChildIds, ...res.allInsertedChildIds];
+                        }
                     });
-            } else {
-                let msg = error.body ? error.body.message : error.message;
-                this.showToast('Error', msg, 'error');
+                }
+
                 this.isLoading = false;
-            }
-        });
+                notifyRecordUpdateAvailable([{ recordId: this.savedRecordId }]);
+
+                if (this.isEditMode || isQuickFinish) {
+                    this.showToast('Success', this.labels.msgRecordSaved, 'success');
+                    this.closeFormAndNavigate();
+                } else {
+                    this.isSubmitHidden = true;
+                    this.enterUploadMode();
+                    this.showToast('Success', this.labels.msgRecordSavedUpload, 'success');
+                }
+            })
+            .catch(error => {
+                console.error('Submission Error:', error);
+
+                if (!this.isEditMode && this.savedRecordId && this._isSaveCommitted) {
+                    this.isLoading = true;
+                    rollbackTransaction({
+                        recordId: this.savedRecordId,
+                        childIds: this._rollbackChildIds,
+                        saveWithoutSharing: this.saveWithoutSharing
+                    })
+                        .then(() => {
+                            this.showToast('Error', 'Submission failed. Record rolled back.', 'error');
+                            this.savedRecordId = null;
+                            this._isSaveCommitted = false;
+                        })
+                        .catch(delErr => {
+                            this.showToast('Error', 'Submission failed and rollback failed. Please contact admin.', 'error');
+                        })
+                        .finally(() => {
+                            this.isLoading = false;
+                        });
+                } else {
+                    let msg = error.body ? error.body.message : error.message;
+                    this.showToast('Error', msg, 'error');
+                    this.isLoading = false;
+                }
+            });
     }
 }
