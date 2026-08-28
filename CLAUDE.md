@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ### Development
+
 ```bash
 npm run lint                        # ESLint on all Aura/LWC JS files
 npm run test                        # Run all Jest unit tests
@@ -14,6 +15,7 @@ npm run prettier                    # Format all source files
 ```
 
 ### Salesforce CLI
+
 ```bash
 sf project deploy start --source-dir force-app   # Deploy to default org
 sf project deploy start -m LightningComponentBundle:dynamicRecordForm  # Deploy single component
@@ -23,6 +25,7 @@ sf org open                         # Open default org in browser
 ```
 
 ### Running a single test file
+
 ```bash
 npx sfdx-lwc-jest -- force-app/main/default/lwc/dynamicRecordForm/__tests__/dynamicRecordForm.test.js
 ```
@@ -34,6 +37,7 @@ npx sfdx-lwc-jest -- force-app/main/default/lwc/dynamicRecordForm/__tests__/dyna
 The entire system is a **single LWC + single Apex controller** that renders any form entirely from CMDT configuration. No new Apex or LWC is written per form.
 
 **CMDT Hierarchy:**
+
 ```
 Form_Config__mdt (one per form)
   └── Form_Section__mdt (N sections per config)
@@ -43,12 +47,14 @@ Form_Config__mdt (one per form)
 ### Three Custom Metadata Types
 
 **`Form_Config__mdt`** — top-level form definition
+
 - `Object_API_Name__c` — the primary SObject being saved
 - `Display_Mode__c` — `Single Page` or `Wizard`
 - `Save_Without_Sharing__c` — bypasses sharing rules via `SystemModeDML` inner class
 - `Button_Config_JSON__c` — JSON override for button labels
 
 **`Form_Section__mdt`** — one section/step in the form
+
 - `Render_As__c` — blank (standard) or `Matrix` for 2D grid entry
 - `Allow_Multiple_Rows__c` — enables add/remove row behavior
 - `Object_API_Name__c` — if set, section fields map to a child object (not the form's parent object)
@@ -59,6 +65,7 @@ Form_Config__mdt (one per form)
 - `Section_Config_JSON__c` — columns/rows definition for Matrix sections
 
 **`Form_Field__mdt`** — one field in a section
+
 - `Field_Type__c` — `Text`, `Number`, `Checkbox`, `Date`, `DateTime`, `Picklist`, `Multi-Select Picklist`, `Lookup`, `Long Text Area`, `File Upload`, `Header`, `Display Text`, `Rich Text`, `Currency`, `Percent`
 - `Visibility_Logic__c`, `Required_Logic__c` — JSON logic trees
 - `Formula_Logic__c` — JS expression string, e.g. `{Quantity__c} * {Cost__c}`; fields referencing it become read-only
@@ -72,6 +79,7 @@ Form_Config__mdt (one per form)
 ### LWC Component: `dynamicRecordForm`
 
 **Public API:**
+
 - `formDeveloperName` — CMDT `Form_Config__mdt.DeveloperName`
 - `recordId` — context record (for pre-population or edit mode)
 - `objectApiName` — informs edit vs. create mode detection
@@ -80,6 +88,7 @@ Form_Config__mdt (one per form)
 - `isLightningOut` — switches file upload from `lightning-file-upload` to base64 upload (for Visualforce/Console)
 
 **Core reactive loop** — after every field change (`handleFieldChange`, `handleMatrixChange`, `handleLookupSelect`), the engine always runs in this fixed order:
+
 1. `calculateFormulas()` — recomputes formula fields
 2. `applyMatrixRules()` — sets matrix cell readonly state, wipes locked cells
 3. `evaluateVisibility()` — shows/hides sections and fields, wipes hidden values, restores values that re-appear
@@ -87,6 +96,7 @@ Form_Config__mdt (one per form)
 `evaluateVisibility()` runs in a stabilization loop (max 10 iterations) because wipes can cascade into further visibility changes.
 
 **State management:**
+
 - `sectionData` (keyed by row UUID) — flat store of all field values; the source of truth for save/formula/visibility
 - `matrixState` (keyed `MATRIX__<sectionDevName>__<rowKey>__<colKey>`) — matrix cell values; accessible in visibility/formula logic via the same key string
 - `sections` array — reactive tree of section/row/field objects; only mutated via spread (`[...this.sections]`) to trigger LWC re-render
@@ -94,6 +104,7 @@ Form_Config__mdt (one per form)
 ### Apex Controller: `DynamicFormController.cls`
 
 Key methods:
+
 - `getFormMetadata(formDeveloperName, recordTypeId)` — cacheable; returns full form config + picklist options + dependency maps
 - `getExistingRecordData(recordId, objectApiName, queryConfigJson)` — generic multi-object query builder for edit mode; builds SOQL from a JSON config describing parent + child objects and fields
 - `saveMultiObject(parentObjectApiName, payload, relationshipMap, recordsToDelete, saveWithoutSharing)` — transactional upsert: parent first, then children; uses `Database.setSavepoint()` for rollback on error
@@ -107,6 +118,7 @@ Key methods:
 ### Wrapper Components
 
 Thin wrappers that host `dynamicRecordForm` for specific use cases. Each wrapper sets `formDeveloperName` and handles the `close` event for navigation:
+
 - `caseCreateWrapper` / `caseEditWrapper` — Case forms
 - `taskCreateWrapper` / `taskEditWrapper` — Task forms
 - `calculateQcScore` — QC scoring form
@@ -145,36 +157,43 @@ Matrix sections with `Parent_Section_DeveloperName__c` set are "dependent" secti
 ## Known Issues & Performance Fixes
 
 ### Lookup Search Latency (FIXED)
+
 **Issue:** Users reported >20 second delays when populating lookup fields in production, especially on high-volume objects (Account, Contact, Case).
 
 **Root cause:** `searchRecords()` method used `WHERE Field LIKE '%term%'` — a full table scan that gets slower as data grows, plus one Apex call per keystroke.
 
 **Fix applied (v1.1):**
+
 - Replaced SOQL LIKE scan with SOSL (`Search.query()`) in `searchRecords()` — uses Salesforce's search index for consistent O(1) performance
-- Added 300ms debounce in `handleLookupSearch()` — queues only one Apex call after user pauses typing, reducing server round-trips by ~70%
+- Added a `LIKE '%term%'` re-filter WHERE clause inside the SOSL `RETURNING` so hits are scoped to the configured `Lookup_Search_Field__c` (SOSL `FIND` matches `IN ALL FIELDS`), plus `AND IsActive = true` for `User` targets
+- Added 300ms debounce (`_lookupSearchTimers`) in `handleLookupSearch()` and raised the minimum search length from 2 to 3 characters — queues only one Apex call after the user pauses typing
 - Added `escapeSoslReservedChars()` helper to safely escape SOSL reserved characters (`* ? & | ! { } [ ] ( ) ^ ~ : \ " '`)
 
-**Status:** Ready to deploy. Test on high-volume objects before release.
+**Status:** Implemented and committed (`985bcc7` lookup latency; `b0fe57e` field-scoped filtering + debounce tuning). `searchRecords` remains `@AuraEnabled(cacheable=true)`.
 
 ### Lookup Selection Race Condition (FIXED)
+
 **Issue:** After selecting a record from lookup search results, previously queued Apex calls would finish and overwrite the selected value with stale search results.
 
 **Root cause:** Stale-response guards (`_activeLookup`, `_activeSearchTerms`) were cleared only in `handleBlur`, not in `handleLookupSelect`, so pending `searchRecords` results would still pass the guard check and corrupt the UI.
 
-**Fix applied (v1.1):** In `handleLookupSelect()`, immediately clear all stale-response guards and debounce timers after selection, ensuring pending calls can't overwrite the choice.
+**Fix applied (v1.1):** In `handleLookupSelect()`, immediately clear all stale-response guards and debounce timers after selection (`_activeLookup = null`, delete `_activeSearchTerms[key]`, clear `_lookupSearchTimers[key]`), ensuring pending calls can't overwrite the choice.
 
-**Status:** Ready to deploy with search latency fix.
+**Status:** Implemented and committed alongside the search latency fix.
 
-### Text Field Typing Delay (DEFERRED)
-**Issue:** Users report typing latency (delay between keystroke and character appearance) in text and textarea fields, especially on forms with complex visibility logic or many fields.
+### Text Field Typing Delay (FIXED)
 
-**Root cause:** `handleFieldChange()` runs the full reactive cycle (`calculateFormulas()`, `applyMatrixRules()`, `evaluateVisibility()`) on every keystroke — synchronous work that blocks the main thread and delays input rendering.
+**Issue:** Users reported typing latency (delay between keystroke and character appearance) in text and textarea fields, especially on forms with complex visibility logic or many fields.
 
-**Why not fixed:** Debouncing the reactive cycle (300ms like lookup search) is riskier than debouncing Apex calls, because:
-- A user typing then immediately moving to another field might see stale state if the debounce hasn't fired yet
-- Visibility/formula logic could behave unexpectedly
-- No safe way to "flush pending eval on blur" without introducing race conditions
+**Root cause:** `handleFieldChange()` ran the full reactive cycle (`calculateFormulas()`, `applyMatrixRules()`, `evaluateVisibility()`) synchronously on every keystroke, blocking the main thread and delaying input rendering.
 
-**Deferred pending:** Business decision needed. If typing delay is acceptable, leave as-is. If it's a blocker, implement debounce with shorter delay (200ms) and add blur-time flush logic.
+**Fix applied:**
 
-**To revisit:** Check with business users early next week; if they need this fixed, implement 200ms debounce on reactive cycle with blur-time flush.
+- `handleFieldChange()` always writes `sectionData[rowId][fieldApi]` synchronously, so the character renders immediately.
+- The reactive cycle is debounced 300ms (`_fieldChangeTimers`, keyed `field-<rowId>-<fieldApi>`) **only** for text-like types: `Text`, `Long Text Area`, `Number`, `Currency`, `Percent`. Picklists, lookups, checkboxes and multi-selects still run it synchronously for cascading logic.
+- Text-like fields that carry a Dynamic SOQL dependency are excluded from the debounce — they run synchronously so bind params resolve at once.
+- Blur-time flush: any non-text field change calls `flushAllFieldChangeTimers()` first, so tabbing from a text field into a picklist runs the picklist's synchronous cycle on current data (no stale state).
+- `validateCurrentStep()` (submit / Next) reads the DOM and `sectionData` directly, so a pending debounce never affects save correctness.
+- Delay used is 300ms (matches the lookup debounce), not the 200ms originally floated.
+
+**Status:** Implemented and committed (`b0fe57e` "text field debounce tuning").

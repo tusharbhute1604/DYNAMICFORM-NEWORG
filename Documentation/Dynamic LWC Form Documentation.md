@@ -1,11 +1,14 @@
 # Dynamic Metadata-Driven LWC Framework
+
 ### Complete Technical & Configuration Reference
 
 ---
 
-> **Version:** 2.0 | **Status:** Production Ready | **Last Updated:** 2025
+> **Version:** 2.1 | **Status:** Production Ready | **Last Updated:** 2026-08
 >
 > **Audience:** Salesforce Admins (Sections 1–8, 11) · Developers (All Sections)
+>
+> **v2.1 changes:** lookup search rewritten to SOSL (`Search.query()`) with a 3-character threshold and 300 ms debounce; text/number/textarea fields debounce the reactive cycle 300 ms; `deleteRecord` / `uploadFile` gained a `saveWithoutSharing` parameter; `rollbackTransaction` documented; matrix `readonlyLogic` now accepts AND/OR; `Currency` / `Percent` / `Rich Text` field types documented; matrix junction object clarified as section-configurable.
 
 ---
 
@@ -47,6 +50,7 @@ The **Dynamic Metadata-Driven LWC Framework** is a native Salesforce solution th
 ### What problem does it solve?
 
 Standard Salesforce Dynamic Forms and Page Layouts cannot:
+
 - Create a **parent record and multiple child records** in a single, atomic transaction
 - Apply **field-level conditional visibility** evaluated entirely on the client without server round-trips
 - React in real time to field changes using **server-side SOQL queries** as dependencies
@@ -56,19 +60,19 @@ Building bespoke LWC components for each new form request creates high technical
 
 ### What does it deliver?
 
-| Capability | Details |
-|---|---|
-| Multi-object transactional save | Parent + N child objects in one atomic database operation |
-| Metadata-driven UI | Sections, fields, columns, and types all configured via CMDT |
-| Client-side visibility engine | AND/OR conditions evaluated instantly on field change |
-| Dependent picklists | Standard schema dependencies + custom JSON overrides |
-| Record Type-aware picklists | Filters picklist values based on active Record Type via ConnectAPI (Spring '26+) |
-| Formula fields | Cross-section JS math/string expressions, results excluded from DML |
-| Dynamic SOQL fields | Real-time field values fetched from the database based on other field inputs |
-| 2D Matrix grids | Configurable column/row grids backed by a junction object |
-| File uploads | Supports both `lightning-file-upload` (standard) and base64 upload (Lightning Out/VF) |
-| Wizard mode | Multi-step form with Previous/Next navigation |
-| Context-aware pre-population | Auto-fills lookups based on the record context the form was launched from |
+| Capability                      | Details                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------- |
+| Multi-object transactional save | Parent + N child objects in one atomic database operation                             |
+| Metadata-driven UI              | Sections, fields, columns, and types all configured via CMDT                          |
+| Client-side visibility engine   | AND/OR conditions evaluated instantly on field change                                 |
+| Dependent picklists             | Standard schema dependencies + custom JSON overrides                                  |
+| Record Type-aware picklists     | Filters picklist values based on active Record Type via ConnectAPI (Spring '26+)      |
+| Formula fields                  | Cross-section JS math/string expressions, results excluded from DML                   |
+| Dynamic SOQL fields             | Real-time field values fetched from the database based on other field inputs          |
+| 2D Matrix grids                 | Configurable column/row grids backed by a junction object                             |
+| File uploads                    | Supports both `lightning-file-upload` (standard) and base64 upload (Lightning Out/VF) |
+| Wizard mode                     | Multi-step form with Previous/Next navigation                                         |
+| Context-aware pre-population    | Auto-fills lookups based on the record context the form was launched from             |
 
 ---
 
@@ -115,11 +119,11 @@ Component Loads
                          ▼
                    buildForm()
                          │
-               ┌─────────┴──────────┐
-         evaluateVisibility()   calculateFormulas()
-               │                    │
-         applyMatrixRules()    fetchDynamicData()
-               │
+                         ▼   (deferred ~300 ms so the DOM renders first)
+         calculateFormulas() → applyMatrixRules() → evaluateVisibility()
+                         │
+         fetchDependentData() · fetchMissingLookupDetails() · evaluateDynamicQueries()
+                         │
           isLoading = false  ──► Form renders
 ```
 
@@ -149,14 +153,14 @@ User clicks Submit
 
 ### 2.4 Key Design Decisions
 
-| Decision | Reasoning |
-|---|---|
-| Client-side visibility evaluation | Zero server round-trips on field change — instant UI response |
-| `_lastLoadKey` deduplication guard | Prevents double initialization when both `recordId` and `objectApiName` setters fire on the same render cycle |
-| `Key_Prefix__c` for pre-population | Prevents polymorphic ID mismatch — e.g., a Contact ID (`003...`) must never populate an Account lookup field |
-| `SystemModeDML` inner class | Allows `saveMultiObject` to bypass sharing rules when `Save_Without_Sharing__c = true`, while keeping the outer class `with sharing` compliant |
-| `@AuraEnabled(cacheable=true)` on metadata | Metadata rarely changes; client-side caching makes repeat form loads near-instant |
-| Linear promise chain during init | Prevents the race condition where the form renders before lookup labels are fetched for Edit Mode |
+| Decision                                   | Reasoning                                                                                                                                      |
+| ------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Client-side visibility evaluation          | Zero server round-trips on field change — instant UI response                                                                                  |
+| `_lastLoadKey` deduplication guard         | Prevents double initialization when both `recordId` and `objectApiName` setters fire on the same render cycle                                  |
+| `Key_Prefix__c` for pre-population         | Prevents polymorphic ID mismatch — e.g., a Contact ID (`003...`) must never populate an Account lookup field                                   |
+| `SystemModeDML` inner class                | Allows `saveMultiObject` to bypass sharing rules when `Save_Without_Sharing__c = true`, while keeping the outer class `with sharing` compliant |
+| `@AuraEnabled(cacheable=true)` on metadata | Metadata rarely changes; client-side caching makes repeat form loads near-instant                                                              |
+| Linear promise chain during init           | Prevents the race condition where the form renders before lookup labels are fetched for Edit Mode                                              |
 
 ---
 
@@ -164,32 +168,32 @@ User clicks Submit
 
 ### Salesforce Components
 
-| Component | Type | Purpose |
-|---|---|---|
-| `dynamicRecordForm` | LWC | **Core rendering engine.** Receives a `formDeveloperName` and renders the entire form |
-| `caseCreateWrapper` | LWC | Wrapper for creating Cases. Handles navigation (Quick Action + Lightning Out/VF) |
-| `caseEditWrapper` | LWC | Wrapper for editing Cases via Quick Action |
-| `taskCreateWrapper` | LWC | Wrapper for creating Tasks via Quick Action from a Case |
-| `calculateQcScore` | LWC | Wrapper for the QC Score edit form on Cases |
-| `DynamicFormApp` | Aura Application | Lightning Out host for the VF page integration |
-| `MaintenanceFormAuraWrapper` | Aura Component | Tab-based wrapper for Maintenance form in Console apps |
-| `DynamicFormController` | Apex Class | All server-side operations (metadata fetch, data load, save, search) |
-| `PicklistDependencyHelper` | Apex Class | Decodes Salesforce's internal `validFor` base64 bitset for picklist dependencies |
-| `Form_Config__mdt` | Custom Metadata | Root form configuration |
-| `Form_Section__mdt` | Custom Metadata | Section-level configuration |
-| `Form_Field__mdt` | Custom Metadata | Field-level configuration |
-| `Matrix_Data__c` | Custom Object | Junction object storing matrix grid cell values |
-| `caseCreatePage` | Visualforce Page | Entry point that routes to custom LWC or standard new Case form |
+| Component                    | Type             | Purpose                                                                                                                                                                                                                                                                                                                                                                      |
+| ---------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dynamicRecordForm`          | LWC              | **Core rendering engine.** Receives a `formDeveloperName` and renders the entire form                                                                                                                                                                                                                                                                                        |
+| `caseCreateWrapper`          | LWC              | Wrapper for creating Cases. Handles navigation (Quick Action + Lightning Out/VF)                                                                                                                                                                                                                                                                                             |
+| `caseEditWrapper`            | LWC              | Wrapper for editing Cases via Quick Action                                                                                                                                                                                                                                                                                                                                   |
+| `taskCreateWrapper`          | LWC              | Wrapper for creating Tasks via Quick Action from a Case                                                                                                                                                                                                                                                                                                                      |
+| `calculateQcScore`           | LWC              | Wrapper for the QC Score edit form on Cases                                                                                                                                                                                                                                                                                                                                  |
+| `DynamicFormApp`             | Aura Application | Lightning Out host for the VF page integration                                                                                                                                                                                                                                                                                                                               |
+| `MaintenanceFormAuraWrapper` | Aura Component   | Tab-based wrapper for Maintenance form in Console apps                                                                                                                                                                                                                                                                                                                       |
+| `DynamicFormController`      | Apex Class       | All server-side operations (metadata fetch, data load, save, search)                                                                                                                                                                                                                                                                                                         |
+| `PicklistDependencyHelper`   | Apex Class       | Decodes Salesforce's internal `validFor` base64 bitset for picklist dependencies                                                                                                                                                                                                                                                                                             |
+| `Form_Config__mdt`           | Custom Metadata  | Root form configuration                                                                                                                                                                                                                                                                                                                                                      |
+| `Form_Section__mdt`          | Custom Metadata  | Section-level configuration                                                                                                                                                                                                                                                                                                                                                  |
+| `Form_Field__mdt`            | Custom Metadata  | Field-level configuration                                                                                                                                                                                                                                                                                                                                                    |
+| `Matrix_Data__c`             | Custom Object    | Junction object storing matrix grid cell values in this reference org. The object used per matrix section is whatever that section's `Form_Section__mdt.Object_API_Name__c` names; if left blank the engine falls back to the literal API name `Form_Matrix_Entry__c`. It must expose `Section_Key__c`, `Row_Key__c`, `Column_Key__c`, `Value__c` and a lookup to the parent |
+| `caseCreatePage`             | Visualforce Page | Entry point that routes to custom LWC or standard new Case form                                                                                                                                                                                                                                                                                                              |
 
 ### Quick Actions
 
-| Action API Name | Object | Component | Purpose |
-|---|---|---|---|
-| `Account.Create_New_Case` | Account | `caseCreateWrapper` | Create Case from Account |
-| `Case.Create_Child_Case` | Case | `caseCreateWrapper` | Create child Case from Case |
-| `Case.Create_Maintenance_Task` | Case | `taskCreateWrapper` | Create Task from Case |
-| `Case.Edit_Case_Details` | Case | `caseEditWrapper` | Edit Case via dynamic form |
-| `Case.QC_Score` | Case | `calculateQcScore` | Update QC Score on Case |
+| Action API Name                | Object  | Component           | Purpose                     |
+| ------------------------------ | ------- | ------------------- | --------------------------- |
+| `Account.Create_New_Case`      | Account | `caseCreateWrapper` | Create Case from Account    |
+| `Case.Create_Child_Case`       | Case    | `caseCreateWrapper` | Create child Case from Case |
+| `Case.Create_Maintenance_Task` | Case    | `taskCreateWrapper` | Create Task from Case       |
+| `Case.Edit_Case_Details`       | Case    | `caseEditWrapper`   | Edit Case via dynamic form  |
+| `Case.QC_Score`                | Case    | `calculateQcScore`  | Update QC Score on Case     |
 
 ---
 
@@ -199,18 +203,18 @@ User clicks Submit
 
 The root record that defines one complete form. Every form has exactly one `Form_Config__mdt` record.
 
-| Field Label | API Name | Type | Required | Description |
-|---|---|---|---|---|
-| Label | `MasterLabel` | Text | ✅ | Human-readable name shown in Setup |
-| Developer Name | `DeveloperName` | Text | ✅ | **The value passed to `formDeveloperName` on the LWC.** Must be unique. Use underscores, no spaces |
-| Active | `Active__c` | Checkbox | ✅ | Master on/off switch. If `false`, Apex throws a user-friendly error and the form refuses to load |
-| Object API Name | `Object_API_Name__c` | Text | ✅ | The API name of the **primary/parent** Salesforce object (e.g., `Case`, `Work_Order__c`) |
-| Form Title | `Form_Title__c` | Text | — | Text shown in the Lightning Card header. Defaults to `"Dynamic Form"` if blank |
-| Form Icon | `Form_Icon__c` | Text | — | SLDS icon name for the card header (e.g., `standard:case`, `standard:account`). Defaults to `standard:record` |
-| Display Mode | `Display_Mode__c` | Picklist | — | `Single Page` (all sections visible at once) or `Wizard` (step-through with Next/Previous buttons). Defaults to `Single Page` |
-| Form Instructions | `Form_Instructions__c` | Long Text | — | HTML-formatted banner displayed at the top of the form (rendered via `lightning-formatted-rich-text`) |
-| Button Config JSON | `Button_Config_JSON__c` | Long Text | — | JSON to override default button labels and toast messages. See [Section 5.5](#55-button-config-json) |
-| Save Without Sharing | `Save_Without_Sharing__c` | Checkbox | — | If `true`, DML operations bypass sharing rules. **Use when Case Assignment Rules immediately reassign record ownership after insert**, which would otherwise cause a cross-reference DML error |
+| Field Label          | API Name                  | Type      | Required | Description                                                                                                                                                                                    |
+| -------------------- | ------------------------- | --------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Label                | `MasterLabel`             | Text      | ✅       | Human-readable name shown in Setup                                                                                                                                                             |
+| Developer Name       | `DeveloperName`           | Text      | ✅       | **The value passed to `formDeveloperName` on the LWC.** Must be unique. Use underscores, no spaces                                                                                             |
+| Active               | `Active__c`               | Checkbox  | ✅       | Master on/off switch. If `false`, Apex throws a user-friendly error and the form refuses to load                                                                                               |
+| Object API Name      | `Object_API_Name__c`      | Text      | ✅       | The API name of the **primary/parent** Salesforce object (e.g., `Case`, `Work_Order__c`)                                                                                                       |
+| Form Title           | `Form_Title__c`           | Text      | —        | Text shown in the Lightning Card header. Defaults to `"Dynamic Form"` if blank                                                                                                                 |
+| Form Icon            | `Form_Icon__c`            | Text      | —        | SLDS icon name for the card header (e.g., `standard:case`, `standard:account`). Defaults to `standard:record`                                                                                  |
+| Display Mode         | `Display_Mode__c`         | Picklist  | —        | `Single Page` (all sections visible at once) or `Wizard` (step-through with Next/Previous buttons). Defaults to `Single Page`                                                                  |
+| Form Instructions    | `Form_Instructions__c`    | Long Text | —        | HTML-formatted banner displayed at the top of the form (rendered via `lightning-formatted-rich-text`)                                                                                          |
+| Button Config JSON   | `Button_Config_JSON__c`   | Long Text | —        | JSON to override default button labels and toast messages. See [Section 5.5](#55-button-config-json)                                                                                           |
+| Save Without Sharing | `Save_Without_Sharing__c` | Checkbox  | —        | If `true`, DML operations bypass sharing rules. **Use when Case Assignment Rules immediately reassign record ownership after insert**, which would otherwise cause a cross-reference DML error |
 
 ---
 
@@ -218,25 +222,25 @@ The root record that defines one complete form. Every form has exactly one `Form
 
 Each section represents a collapsible group of fields within a form. Sections can target the parent object or a child object.
 
-| Field Label | API Name | Type | Required | Description |
-|---|---|---|---|---|
-| Label | `MasterLabel` | Text | ✅ | Default section header. Max 40 characters |
-| Developer Name | `DeveloperName` | Text | ✅ | Unique identifier used internally and in Matrix/section dependency references |
-| Form Config | `Form_Config__c` | Metadata Relationship | ✅ | Links to the parent `Form_Config__mdt` record |
-| Object API Name | `Object_API_Name__c` | Text | — | The Salesforce object this section's fields belong to. If different from the parent Form Config object, this section is treated as a **child section** |
-| Order | `Order__c` | Number | — | Display order (ascending). Sections without a value appear last |
-| Override Label | `Override_Label__c` | Text (255) | — | Overrides `MasterLabel` on the rendered form. Use when the section name exceeds 40 characters |
-| Render As | `Render_As__c` | Picklist | — | `Standard` (default field grid) or `Matrix` (2D grid table). See [Section 5.6](#56-matrix-section-config-json) |
-| Number of Columns | `Number_of_Columns__c` | Number | — | `1` or `2` columns in the field grid. Defaults to `2`. Wide fields (Long Text, File Upload, Multi-Select) always span full width regardless of this setting |
-| Allow Multiple Rows | `Allow_Multiple_Rows__c` | Checkbox | — | Adds **Add** and **Delete** row buttons to the section. Each added row creates one child record on save. Use for child objects where multiple records are expected (e.g., Work Parts) |
-| Relationship Parent Field | `Relationship_Parent_Field__c` | Text | — | **Required if `Object_API_Name__c` is a child object.** The API name of the lookup/master-detail field **on the child object** that points to the parent (e.g., `Maintenance_Request__c`) |
-| Is Required | `Is_Required__c` | Checkbox | — | For Matrix sections only. If `true`, the user must populate at least one cell before saving |
-| Collapse by Default | `Collapse_by_Default__c` | Checkbox | — | If `true`, the section renders collapsed on load. User must click to expand |
-| Show On | `Show_On__c` | Picklist | — | `Create` (only in create mode), `Edit` (only in edit mode), `Both` (always). If blank, defaults to `Both` |
-| Custom Component Name | `Custom_Component_Name__c` | Text | — | Developer-only. If populated, renders a custom child LWC instead of a field grid. The named component must accept the same contract as the framework |
-| Visibility Logic | `Visibility_Logic__c` | Long Text | — | JSON condition to show/hide the entire section. See [Section 5.1](#51-visibility-logic) |
-| Section Config JSON | `Section_Config_JSON__c` | Long Text | — | **Required when `Render_As__c = Matrix`.** Defines columns, rows, and per-cell rules. See [Section 5.6](#56-matrix-section-config-json) |
-| Parent Section Developer Name | `Parent_Section_DeveloperName__c` | Text | — | For Matrix sections only. If this Matrix section's data is linked to a **different section's child object** (rather than directly to the main parent), enter that section's `DeveloperName` here. Enables a two-phase save |
+| Field Label                   | API Name                          | Type                  | Required | Description                                                                                                                                                                                                                |
+| ----------------------------- | --------------------------------- | --------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Label                         | `MasterLabel`                     | Text                  | ✅       | Default section header. Max 40 characters                                                                                                                                                                                  |
+| Developer Name                | `DeveloperName`                   | Text                  | ✅       | Unique identifier used internally and in Matrix/section dependency references                                                                                                                                              |
+| Form Config                   | `Form_Config__c`                  | Metadata Relationship | ✅       | Links to the parent `Form_Config__mdt` record                                                                                                                                                                              |
+| Object API Name               | `Object_API_Name__c`              | Text                  | —        | The Salesforce object this section's fields belong to. If different from the parent Form Config object, this section is treated as a **child section**                                                                     |
+| Order                         | `Order__c`                        | Number                | —        | Display order (ascending). Sections without a value appear last                                                                                                                                                            |
+| Override Label                | `Override_Label__c`               | Text (255)            | —        | Overrides `MasterLabel` on the rendered form. Use when the section name exceeds 40 characters                                                                                                                              |
+| Render As                     | `Render_As__c`                    | Picklist              | —        | `Standard` (default field grid) or `Matrix` (2D grid table). See [Section 5.6](#56-matrix-section-config-json)                                                                                                             |
+| Number of Columns             | `Number_of_Columns__c`            | Number                | —        | `1` or `2` columns in the field grid. Defaults to `2`. Wide fields (Long Text, File Upload, Multi-Select) always span full width regardless of this setting                                                                |
+| Allow Multiple Rows           | `Allow_Multiple_Rows__c`          | Checkbox              | —        | Adds **Add** and **Delete** row buttons to the section. Each added row creates one child record on save. Use for child objects where multiple records are expected (e.g., Work Parts)                                      |
+| Relationship Parent Field     | `Relationship_Parent_Field__c`    | Text                  | —        | **Required if `Object_API_Name__c` is a child object.** The API name of the lookup/master-detail field **on the child object** that points to the parent (e.g., `Maintenance_Request__c`)                                  |
+| Is Required                   | `Is_Required__c`                  | Checkbox              | —        | For Matrix sections only. If `true`, the user must populate at least one cell before saving                                                                                                                                |
+| Collapse by Default           | `Collapse_by_Default__c`          | Checkbox              | —        | If `true`, the section renders collapsed on load. User must click to expand                                                                                                                                                |
+| Show On                       | `Show_On__c`                      | Picklist              | —        | `Create` (only in create mode), `Edit` (only in edit mode), `Both` (always). If blank, defaults to `Both`                                                                                                                  |
+| Custom Component Name         | `Custom_Component_Name__c`        | Text                  | —        | Developer-only. If populated, renders a custom child LWC instead of a field grid. The named component must accept the same contract as the framework                                                                       |
+| Visibility Logic              | `Visibility_Logic__c`             | Long Text             | —        | JSON condition to show/hide the entire section. See [Section 5.1](#51-visibility-logic)                                                                                                                                    |
+| Section Config JSON           | `Section_Config_JSON__c`          | Long Text             | —        | **Required when `Render_As__c = Matrix`.** Defines columns, rows, and per-cell rules. See [Section 5.6](#56-matrix-section-config-json)                                                                                    |
+| Parent Section Developer Name | `Parent_Section_DeveloperName__c` | Text                  | —        | For Matrix sections only. If this Matrix section's data is linked to a **different section's child object** (rather than directly to the main parent), enter that section's `DeveloperName` here. Enables a two-phase save |
 
 ---
 
@@ -246,81 +250,86 @@ Defines a single input, display element, or virtual calculation field within a s
 
 #### Core Identity
 
-| Field Label | API Name | Type | Required | Description |
-|---|---|---|---|---|
-| Label | `MasterLabel` | Text | ✅ | Default field label. Max 40 characters |
-| Developer Name | `DeveloperName` | Text | ✅ | Unique system identifier |
-| Form Section | `Form_Section__c` | Metadata Relationship | ✅ | Links to the parent `Form_Section__mdt` record |
-| Field API Name | `Field_API_Name__c` | Text | — | The exact Salesforce field API name on the target object. If blank, the field is treated as a **Form-Only virtual field** and never saved to the database |
-| Field Type | `Field_Type__c` | Picklist | ✅ | Controls the rendered UI component. See field type table below |
-| Order | `Order__c` | Number | — | Display order within the section (ascending) |
-| Override Label | `Override_Label__c` | Text (200) | — | Overrides `MasterLabel` on the form. Use for labels exceeding 40 characters |
+| Field Label    | API Name            | Type                  | Required | Description                                                                                                                                               |
+| -------------- | ------------------- | --------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Label          | `MasterLabel`       | Text                  | ✅       | Default field label. Max 40 characters                                                                                                                    |
+| Developer Name | `DeveloperName`     | Text                  | ✅       | Unique system identifier                                                                                                                                  |
+| Form Section   | `Form_Section__c`   | Metadata Relationship | ✅       | Links to the parent `Form_Section__mdt` record                                                                                                            |
+| Field API Name | `Field_API_Name__c` | Text                  | —        | The exact Salesforce field API name on the target object. If blank, the field is treated as a **Form-Only virtual field** and never saved to the database |
+| Field Type     | `Field_Type__c`     | Picklist              | ✅       | Controls the rendered UI component. See field type table below                                                                                            |
+| Order          | `Order__c`          | Number                | —        | Display order within the section (ascending)                                                                                                              |
+| Override Label | `Override_Label__c` | Text (200)            | —        | Overrides `MasterLabel` on the form. Use for labels exceeding 40 characters                                                                               |
 
 #### Field Types
 
-| `Field_Type__c` Value | Renders As | Notes |
-|---|---|---|
-| `Text` | `lightning-input type="text"` | Standard text input |
-| `Number` | `lightning-input type="number"` | Numeric input with `step="any"` |
-| `Checkbox` | `lightning-input type="checkbox"` | Boolean toggle |
-| `Date` | `lightning-input type="date"` | Date picker |
-| `DateTime` | `lightning-input type="datetime"` | Date+time picker |
-| `Picklist` | `lightning-combobox` | Single-select dropdown with `--None--` option prepended |
-| `Multi-Select Picklist` | `lightning-dual-listbox` | Dual listbox; values stored semicolon-delimited |
-| `Lookup` | Custom combobox with search | Custom LWC lookup with live search. Requires `Lookup_Target_Object__c` and `Lookup_Search_Field__c` |
-| `Long Text Area` | `lightning-textarea` | Multi-line text; always spans full width |
-| `File Upload` | `lightning-file-upload` or `lightning-input type="file"` | Standard context uses `lightning-file-upload`; Lightning Out/VF uses base64 upload. See [Section 9.3](#93-file-upload-behaviour) |
-| `Header` | Styled `<h3>` divider | Non-input decorative element. Never saved |
-| `Display Text` | `lightning-formatted-rich-text` | Renders `HTML_Content__c` as rich text. Never saved |
+| `Field_Type__c` Value   | Renders As                                               | Notes                                                                                                                                                                   |
+| ----------------------- | -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Text`                  | `lightning-input type="text"`                            | Standard text input                                                                                                                                                     |
+| `Number`                | `lightning-input type="number"`                          | Numeric input with `step="any"`                                                                                                                                         |
+| `Currency`              | `lightning-input type="text"`                            | Rendered as a plain text input (no currency mask); the value is cast to a `Double` on save by the Apex `createSObject()`. `Default_Value__c` is coerced with `Number()` |
+| `Percent`               | `lightning-input type="text"`                            | Same as `Currency` — plain text input, cast to `Double` on save                                                                                                         |
+| `Checkbox`              | `lightning-input type="checkbox"`                        | Boolean toggle                                                                                                                                                          |
+| `Date`                  | `lightning-input type="date"`                            | Date picker                                                                                                                                                             |
+| `DateTime`              | `lightning-input type="datetime"`                        | Date+time picker                                                                                                                                                        |
+| `Picklist`              | `lightning-combobox`                                     | Single-select dropdown with `--None--` option prepended                                                                                                                 |
+| `Multi-Select Picklist` | `lightning-dual-listbox`                                 | Dual listbox; values stored semicolon-delimited                                                                                                                         |
+| `Lookup`                | Custom combobox with search                              | Custom LWC lookup with live SOSL search. Requires `Lookup_Target_Object__c` and `Lookup_Search_Field__c`                                                                |
+| `Long Text Area`        | `lightning-textarea`                                     | Multi-line text; always spans full width                                                                                                                                |
+| `File Upload`           | `lightning-file-upload` or `lightning-input type="file"` | Standard context uses `lightning-file-upload`; Lightning Out/VF uses base64 upload. See [Section 9.3](#93-file-upload-behaviour)                                        |
+| `Header`                | Styled `<h3>` divider                                    | Non-input decorative element. Never saved                                                                                                                               |
+| `Display Text`          | `lightning-formatted-rich-text`                          | Renders `HTML_Content__c` as rich text. Never saved                                                                                                                     |
+| `Rich Text`             | `lightning-formatted-rich-text`                          | Alias of `Display Text` — identical behavior (renders `HTML_Content__c`, never saved)                                                                                   |
 
 #### Validation & Behaviour
 
-| Field Label | API Name | Type | Description |
-|---|---|---|---|
-| Required | `Required__c` | Checkbox | Statically marks the field as required. Enforced on both client and server |
-| Required Logic | `Required_Logic__c` | Long Text | JSON condition to make the field conditionally required. Evaluated in real time. See [Section 5.2](#52-required-logic) |
-| Read Only | `Read_Only__c` | Checkbox | Renders the field as disabled. **Note:** Fields with a `Formula_Logic__c` value are automatically read-only regardless of this setting |
-| Save To Database | `Save_To_Database__c` | Checkbox | Defaults to `true`. Set to `false` for virtual/calculation-only fields. These fields are completely stripped from the DML payload |
-| Fetch On Edit | `Fetch_On_Edit__c` | Checkbox | If `true`, this field's value is fetched from the database even when its parent section is hidden in edit mode. Use for fields that drive visibility logic but are not directly displayed |
-| Default Value | `Default_Value__c` | Text | Initial value populated on create mode. For Checkbox fields, use `true` or `false`. For Number fields, use numeric string (e.g., `0`) |
-| Help Text | `Help_Text__c` | Text | Displayed below the field in small italic text |
-| HTML Content | `HTML_Content__c` | Long Text | **Only used when `Field_Type__c = Display Text`.** Supports HTML tags (`<b>`, `<br>`, `<a>`, etc.) |
-| Visibility Logic | `Visibility_Logic__c` | Long Text | JSON condition to show/hide this individual field. See [Section 5.1](#51-visibility-logic) |
+| Field Label      | API Name              | Type      | Description                                                                                                                                                                               |
+| ---------------- | --------------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Required         | `Required__c`         | Checkbox  | Statically marks the field as required. Enforced on both client and server                                                                                                                |
+| Required Logic   | `Required_Logic__c`   | Long Text | JSON condition to make the field conditionally required. Evaluated in real time. See [Section 5.2](#52-required-logic)                                                                    |
+| Read Only        | `Read_Only__c`        | Checkbox  | Renders the field as disabled. **Note:** Fields with a `Formula_Logic__c` value are automatically read-only regardless of this setting                                                    |
+| Save To Database | `Save_To_Database__c` | Checkbox  | Defaults to `true`. Set to `false` for virtual/calculation-only fields. These fields are completely stripped from the DML payload                                                         |
+| Fetch On Edit    | `Fetch_On_Edit__c`    | Checkbox  | If `true`, this field's value is fetched from the database even when its parent section is hidden in edit mode. Use for fields that drive visibility logic but are not directly displayed |
+| Default Value    | `Default_Value__c`    | Text      | Initial value populated on create mode. For Checkbox fields, use `true` or `false`. For Number fields, use numeric string (e.g., `0`)                                                     |
+| Help Text        | `Help_Text__c`        | Text      | Displayed below the field in small italic text                                                                                                                                            |
+| HTML Content     | `HTML_Content__c`     | Long Text | **Only used when `Field_Type__c = Display Text`.** Supports HTML tags (`<b>`, `<br>`, `<a>`, etc.)                                                                                        |
+| Visibility Logic | `Visibility_Logic__c` | Long Text | JSON condition to show/hide this individual field. See [Section 5.1](#51-visibility-logic)                                                                                                |
 
 #### Targeting (Which Object Does This Field Save To?)
 
 By default, every field in a section saves to that section's `Object_API_Name__c`. These fields allow per-field overrides:
 
-| Field Label | API Name | Type | Description |
-|---|---|---|---|
-| Target Object API Name | `Target_Object_API_Name__c` | Text | Overrides the section's object for this specific field. Use when a single section contains fields from two different objects |
-| Target Object Parent Field | `Target_Object_Parent_Field__c` | Text | If `Target_Object_API_Name__c` is set to a child object, this is the lookup field on that child pointing to the parent |
+| Field Label                | API Name                        | Type | Description                                                                                                                  |
+| -------------------------- | ------------------------------- | ---- | ---------------------------------------------------------------------------------------------------------------------------- |
+| Target Object API Name     | `Target_Object_API_Name__c`     | Text | Overrides the section's object for this specific field. Use when a single section contains fields from two different objects |
+| Target Object Parent Field | `Target_Object_Parent_Field__c` | Text | If `Target_Object_API_Name__c` is set to a child object, this is the lookup field on that child pointing to the parent       |
 
 #### Lookup Field Configuration
 
-| Field Label | API Name | Type | Description |
-|---|---|---|---|
-| Lookup Target Object | `Lookup_Target_Object__c` | Text | **Required for Lookup fields.** API name of the object being searched (e.g., `Account`, `User`) |
-| Lookup Search Field | `Lookup_Search_Field__c` | Text | Comma-separated field API names to search against and display. First field is the primary label; subsequent fields appear as metadata. Example: `Name,Email,Phone` |
-| Prepopulate | `Prepopulate__c` | Checkbox | If `true`, the framework attempts to auto-populate this field with the current page's `recordId` when in create mode |
-| Key Prefix | `Key_Prefix__c` | Text (3) | **Security lock for prepopulation.** The first 3 characters of the expected record ID type (e.g., `001` for Account, `003` for Contact, `500` for Case). Pre-population only fires if the page's `recordId` starts with this prefix. Prevents a Contact ID from being placed into an Account lookup |
-| Source Field API Name | `Source_Field_API_Name__c` | Text | When prepopulating, instead of using the `recordId` itself, copy the value from this field on the source record. Example: set to `OwnerId` to copy the Account's owner into a User lookup field |
-| Controlling Lookup | `Controlling_Lookup__c` | Text | The API name of another Lookup field on the same form whose value controls this field. When the controlling lookup changes, this field's value is reactively cleared and optionally re-populated if `Source_Field_API_Name__c` is configured |
+| Field Label           | API Name                   | Type     | Description                                                                                                                                                                                                                                                                                         |
+| --------------------- | -------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Lookup Target Object  | `Lookup_Target_Object__c`  | Text     | **Required for Lookup fields.** API name of the object being searched (e.g., `Account`, `User`)                                                                                                                                                                                                     |
+| Lookup Search Field   | `Lookup_Search_Field__c`   | Text     | Comma-separated field API names to search against and display. First field is the primary label; subsequent fields appear as metadata. Example: `Name,Email,Phone`                                                                                                                                  |
+| Prepopulate           | `Prepopulate__c`           | Checkbox | If `true`, the framework attempts to auto-populate this field with the current page's `recordId` when in create mode                                                                                                                                                                                |
+| Key Prefix            | `Key_Prefix__c`            | Text (3) | **Security lock for prepopulation.** The first 3 characters of the expected record ID type (e.g., `001` for Account, `003` for Contact, `500` for Case). Pre-population only fires if the page's `recordId` starts with this prefix. Prevents a Contact ID from being placed into an Account lookup |
+| Source Field API Name | `Source_Field_API_Name__c` | Text     | When prepopulating, instead of using the `recordId` itself, copy the value from this field on the source record. Example: set to `OwnerId` to copy the Account's owner into a User lookup field                                                                                                     |
+| Controlling Lookup    | `Controlling_Lookup__c`    | Text     | The API name of another Lookup field on the same form whose value controls this field. When the controlling lookup changes, this field's value is reactively cleared and optionally re-populated if `Source_Field_API_Name__c` is configured                                                        |
+
+> **Lookup search behaviour:** typeahead fires only after **3+ characters** and is debounced **300 ms**, so a burst of keystrokes produces one server call. The search runs as SOSL (`Search.query()`) against the Salesforce search index — fast on high-volume objects, but a brand-new record is not returned until the async indexer catches up. For `User` targets, inactive users are excluded automatically.
 
 #### Picklist Field Configuration
 
-| Field Label | API Name | Type | Description |
-|---|---|---|---|
+| Field Label              | API Name                      | Type      | Description                                                                                                                                                                                    |
+| ------------------------ | ----------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Override Picklist Values | `Override_Picklist_Values__c` | Long Text | Comma-separated list to completely replace the Salesforce picklist values. Example: `Hardware,Software`. Also used for File Upload fields to specify accepted formats (e.g., `.pdf,.png,.jpg`) |
-| Controller Field | `Controller_Field__c` | Text | For dependent picklists: the API name of the controlling field. The framework uses Salesforce's schema dependencies by default; pair with `Override_Dependency_JSON__c` to override |
-| Override Dependency JSON | `Override_Dependency_JSON__c` | Long Text | JSON to manually define dependent picklist mappings when standard Salesforce dependencies aren't sufficient. See example in [Section 5](#5-json-configuration-reference) |
+| Controller Field         | `Controller_Field__c`         | Text      | For dependent picklists: the API name of the controlling field. The framework uses Salesforce's schema dependencies by default; pair with `Override_Dependency_JSON__c` to override            |
+| Override Dependency JSON | `Override_Dependency_JSON__c` | Long Text | JSON to manually define dependent picklist mappings when standard Salesforce dependencies aren't sufficient. See example in [Section 5](#5-json-configuration-reference)                       |
 
 #### Formula & Dynamic Query Fields
 
-| Field Label | API Name | Type | Description |
-|---|---|---|---|
+| Field Label   | API Name           | Type      | Description                                                                                                                                                                                                                    |
+| ------------- | ------------------ | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | Formula Logic | `Formula_Logic__c` | Long Text | JavaScript expression using `{FieldAPIName}` merge syntax. Evaluated on the client whenever any dependent field changes. Result is stored in memory. Field must be `Read_Only__c = true`. See [Section 5.3](#53-formula-logic) |
-| Dynamic SOQL | `Dynamic_SOQL__c` | Long Text | SOQL query using `'{FieldAPIName}'` merge syntax as bind variables. Fires when any referenced field changes. Result populates this field's value. See [Section 5.4](#54-dynamic-soql) |
+| Dynamic SOQL  | `Dynamic_SOQL__c`  | Long Text | SOQL query using `'{FieldAPIName}'` merge syntax as bind variables. Fires when any referenced field changes. Result populates this field's value. See [Section 5.4](#54-dynamic-soql)                                          |
 
 ---
 
@@ -334,12 +343,12 @@ Evaluated entirely on the client — no server call is made on each field change
 
 #### Operators
 
-| Operator | Meaning |
-|---|---|
-| `equals` | Value strictly matches (type-sensitive: `true` ≠ `"true"` for Checkboxes) |
-| `not_equals` | Value does not match |
-| `includes` | Field value contains the target string (useful for multi-select picklist semicolon strings) |
-| `excludes` | Field value does not contain the target string |
+| Operator     | Meaning                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------- |
+| `equals`     | Value strictly matches (type-sensitive: `true` ≠ `"true"` for Checkboxes)                   |
+| `not_equals` | Value does not match                                                                        |
+| `includes`   | Field value contains the target string (useful for multi-select picklist semicolon strings) |
+| `excludes`   | Field value does not contain the target string                                              |
 
 #### Single Condition
 
@@ -410,9 +419,7 @@ When the condition evaluates to `true`, the field becomes required **in addition
 ```json
 {
   "operator": "AND",
-  "conditions": [
-    { "when": "Is_VIP__c", "operator": "equals", "value": true }
-  ]
+  "conditions": [{ "when": "Is_VIP__c", "operator": "equals", "value": true }]
 }
 ```
 
@@ -504,35 +511,35 @@ Placed in `Form_Config__mdt.Button_Config_JSON__c`. All keys are optional — on
 
 ```json
 {
-  "cancel":         "Discard",
-  "next":           "Continue →",
-  "previous":       "← Back",
-  "finish":         "Done",
-  "submit":         "Submit Request",
-  "save":           "Save Changes",
-  "saveAndUpload":  "Save & Continue to Upload",
-  "saveAndFinish":  "Save & Finish",
-  "saveAndAttach":  "Save & Upload Files",
-  "msgRecordSaved":       "Your request has been submitted!",
+  "cancel": "Discard",
+  "next": "Continue →",
+  "previous": "← Back",
+  "finish": "Done",
+  "submit": "Submit Request",
+  "save": "Save Changes",
+  "saveAndUpload": "Save & Continue to Upload",
+  "saveAndFinish": "Save & Finish",
+  "saveAndAttach": "Save & Upload Files",
+  "msgRecordSaved": "Your request has been submitted!",
   "msgRecordSavedUpload": "Record saved! Please upload your supporting files.",
-  "msgUploadSuccess":     "file(s) uploaded successfully."
+  "msgUploadSuccess": "file(s) uploaded successfully."
 }
 ```
 
-| Key | When Shown | Default |
-|---|---|---|
-| `cancel` | Always | `Cancel` |
-| `next` | Wizard mode, not last step | `Next` |
-| `previous` | Wizard mode, not first step | `Previous` |
-| `finish` | After save when upload sections exist | `Finish` |
-| `submit` | Submit button before first save | `Submit Form` |
-| `save` | Submit button after a record has been saved (edit mode / re-save) | `Save Changes` |
-| `saveAndUpload` | When required File Upload fields are present and record not yet saved | `Save & Continue to Upload` |
-| `saveAndFinish` | When optional File Upload fields are present (no-upload path) | `Save & Finish` |
-| `saveAndAttach` | When optional File Upload fields are present (upload path) | `Save & Attach Files` |
-| `msgRecordSaved` | Toast on successful save (no upload required) | `Record saved successfully!` |
-| `msgRecordSavedUpload` | Toast on successful save when upload step follows | `Record saved! Please upload your files.` |
-| `msgUploadSuccess` | Toast after file upload completes | `file(s) uploaded successfully.` |
+| Key                    | When Shown                                                            | Default                                   |
+| ---------------------- | --------------------------------------------------------------------- | ----------------------------------------- |
+| `cancel`               | Always                                                                | `Cancel`                                  |
+| `next`                 | Wizard mode, not last step                                            | `Next`                                    |
+| `previous`             | Wizard mode, not first step                                           | `Previous`                                |
+| `finish`               | After save when upload sections exist                                 | `Finish`                                  |
+| `submit`               | Submit button before first save                                       | `Submit Form`                             |
+| `save`                 | Submit button after a record has been saved (edit mode / re-save)     | `Save Changes`                            |
+| `saveAndUpload`        | When required File Upload fields are present and record not yet saved | `Save & Continue to Upload`               |
+| `saveAndFinish`        | When optional File Upload fields are present (no-upload path)         | `Save & Finish`                           |
+| `saveAndAttach`        | When optional File Upload fields are present (upload path)            | `Save & Attach Files`                     |
+| `msgRecordSaved`       | Toast on successful save (no upload required)                         | `Record saved successfully!`              |
+| `msgRecordSavedUpload` | Toast on successful save when upload step follows                     | `Record saved! Please upload your files.` |
+| `msgUploadSuccess`     | Toast after file upload completes                                     | `file(s) uploaded successfully.`          |
 
 ---
 
@@ -546,19 +553,19 @@ Placed in `Form_Section__mdt.Section_Config_JSON__c`. Only used when `Render_As_
 {
   "columns": [
     { "label": "United Kingdom", "key": "GB", "type": "checkbox" },
-    { "label": "United States",  "key": "US", "type": "checkbox" },
-    { "label": "Score",          "key": "Score", "type": "number" }
+    { "label": "United States", "key": "US", "type": "checkbox" },
+    { "label": "Score", "key": "Score", "type": "number" }
   ],
   "rows": [
     {
       "label": "Domestic High-Value Payment",
-      "key":   "Domestic_High_Value",
+      "key": "Domestic_High_Value",
       "cells": {
         "GB": {
           "readonlyLogic": {
-            "when":     "Maintenance_Levels__c",
+            "when": "Maintenance_Levels__c",
             "operator": "excludes",
-            "value":    "Level-1"
+            "value": "Level-1"
           }
         },
         "US": {
@@ -575,52 +582,52 @@ Placed in `Form_Section__mdt.Section_Config_JSON__c`. Only used when `Render_As_
 
 #### Column Properties
 
-| Property | Required | Description |
-|---|---|---|
-| `label` | ✅ | Column header text |
-| `key` | ✅ | Unique identifier. **Must use only letters, numbers, and underscores.** This key is used as part of the DOM ID and the `MATRIX__` visibility reference. Spaces or special characters will break accessibility bindings |
-| `type` | — | `checkbox` (default), `number`, or `text` |
+| Property | Required | Description                                                                                                                                                                                                            |
+| -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `label`  | ✅       | Column header text                                                                                                                                                                                                     |
+| `key`    | ✅       | Unique identifier. **Must use only letters, numbers, and underscores.** This key is used as part of the DOM ID and the `MATRIX__` visibility reference. Spaces or special characters will break accessibility bindings |
+| `type`   | —        | `checkbox` (default), `number`, or `text`                                                                                                                                                                              |
 
 #### Row Properties
 
-| Property | Required | Description |
-|---|---|---|
-| `label` | ✅ | Row header text shown in the first column |
-| `key` | ✅ | Unique identifier. Same naming rules as column keys |
-| `cells` | — | Object keyed by column key, with per-cell override rules |
+| Property | Required | Description                                              |
+| -------- | -------- | -------------------------------------------------------- |
+| `label`  | ✅       | Row header text shown in the first column                |
+| `key`    | ✅       | Unique identifier. Same naming rules as column keys      |
+| `cells`  | —        | Object keyed by column key, with per-cell override rules |
 
 #### Cell Override Properties
 
-| Property | Description |
-|---|---|
-| `type` | Override the column's default type for this specific cell |
-| `readonly` | `true` to statically disable this cell |
-| `readonlyLogic` | Same JSON structure as [Visibility Logic](#51-visibility-logic). When the condition is `true`, the cell is disabled **and its value is wiped** (garbage collection on disable). Single-condition format only (no AND/OR nesting) |
+| Property        | Description                                                                                                                                                                                                                                                                                                                                       |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `type`          | Override the column's default type for this specific cell                                                                                                                                                                                                                                                                                         |
+| `readonly`      | `true` to statically disable this cell                                                                                                                                                                                                                                                                                                            |
+| `readonlyLogic` | Same JSON structure as [Visibility Logic](#51-visibility-logic), including nested `AND` / `OR` blocks — it is evaluated by the same `checkLogic()` routine. When it resolves `true`, the cell is disabled **and its value is wiped** (garbage collection on disable). The `when` field may reference any `sectionData` field or a `MATRIX__…` key |
 
 #### Data Storage
 
-Each matrix cell is persisted as one record in the `Matrix_Data__c` junction object with these fields:
+Each matrix cell is persisted as one record in the section's junction object — the object named by that matrix `Form_Section__mdt.Object_API_Name__c` (this org uses `Matrix_Data__c`; the code fallback when blank is `Form_Matrix_Entry__c`). The object must expose these fields, plus the lookup named in `Relationship_Parent_Field__c` pointing at the parent record:
 
-| Field | Value |
-|---|---|
-| `Section_Key__c` | `DeveloperName` of the `Form_Section__mdt` record |
-| `Row_Key__c` | The row's `key` from the JSON config |
-| `Column_Key__c` | The column's `key` from the JSON config |
-| `Value__c` | Cell value as a string (`"true"`, `"false"`, or numeric/text string) |
+| Field            | Value                                                                |
+| ---------------- | -------------------------------------------------------------------- |
+| `Section_Key__c` | `DeveloperName` of the `Form_Section__mdt` record                    |
+| `Row_Key__c`     | The row's `key` from the JSON config                                 |
+| `Column_Key__c`  | The column's `key` from the JSON config                              |
+| `Value__c`       | Cell value as a string (`"true"`, `"false"`, or numeric/text string) |
 
-> **Garbage collection:** When a cell that was previously saved is disabled by `readonlyLogic`, the framework adds its `Matrix_Data__c` record ID to `_recordsToDelete`, which triggers a hard `Database.delete()` during the next save.
+> **Garbage collection:** When a cell that was previously saved is disabled by `readonlyLogic` (or cleared by the user), the framework adds its junction record ID to the `recordsToDelete` list passed to `saveMultiObject`, which triggers a hard `Database.delete()` during the next save.
 
 #### Override Dependency JSON Example (for Picklists)
 
 ```json
 {
   "Hardware": [
-    { "label": "Laptop",  "value": "Laptop" },
+    { "label": "Laptop", "value": "Laptop" },
     { "label": "Monitor", "value": "Monitor" }
   ],
   "Software": [
     { "label": "Office 365", "value": "Office 365" },
-    { "label": "Salesforce",  "value": "Salesforce" }
+    { "label": "Salesforce", "value": "Salesforce" }
   ]
 }
 ```
@@ -635,23 +642,23 @@ This is the only component that contains form logic. All wrapper components simp
 
 #### Public API (`@api` Properties)
 
-| Property | Type | Default | Description |
-|---|---|---|---|
-| `formDeveloperName` | String | — | **Required.** The `DeveloperName` of the `Form_Config__mdt` record to load |
-| `formMode` | String | `'auto'` | Controls data loading behaviour. `'auto'` = loads data if `recordId` looks like an existing record (≥15 chars); `'create'` = never loads existing data (ID is treated as context for pre-population only); `'edit'` = always loads existing data from the ID |
-| `recordId` | String | — | The Salesforce record ID. In create mode: used for pre-population context. In edit mode: the record to load and edit |
-| `objectApiName` | String | — | The API name of the current record's object. Used for contextual pre-population in some scenarios |
-| `recordTypeId` | String | `''` | Optional. Forces a specific Record Type on save and enables Record Type-aware picklist filtering |
-| `isLightningOut` | Boolean | `false` | **Set to `true` when embedding in a Visualforce page via Lightning Out.** Switches file upload from `lightning-file-upload` to a base64-based `lightning-input type="file"` |
+| Property            | Type    | Default  | Description                                                                                                                                                                                                                                                  |
+| ------------------- | ------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `formDeveloperName` | String  | —        | **Required.** The `DeveloperName` of the `Form_Config__mdt` record to load                                                                                                                                                                                   |
+| `formMode`          | String  | `'auto'` | Controls data loading behaviour. `'auto'` = loads data if `recordId` looks like an existing record (≥15 chars); `'create'` = never loads existing data (ID is treated as context for pre-population only); `'edit'` = always loads existing data from the ID |
+| `recordId`          | String  | —        | The Salesforce record ID. In create mode: used for pre-population context. In edit mode: the record to load and edit                                                                                                                                         |
+| `objectApiName`     | String  | —        | The API name of the current record's object. Used for contextual pre-population in some scenarios                                                                                                                                                            |
+| `recordTypeId`      | String  | `''`     | Optional. Forces a specific Record Type on save and enables Record Type-aware picklist filtering                                                                                                                                                             |
+| `isLightningOut`    | Boolean | `false`  | **Set to `true` when embedding in a Visualforce page via Lightning Out.** Switches file upload from `lightning-file-upload` to a base64-based `lightning-input type="file"`                                                                                  |
 
 #### Events Fired
 
-| Event Name | When | `event.detail` Shape | Description |
-|---|---|---|---|
-| `close` | Cancel, successful save, or Finish | `{ recordId: String \| null }` | Signals the parent wrapper to close the modal/tab. `recordId` is the saved/updated record's ID, or `null` on cancel |
-| `notification` | Any toast message | `{ title, message, variant }` | Bubbles a toast up through the Shadow DOM. Required for Lightning Out / VF page integration where `ShowToastEvent` doesn't reach the VF container |
+| Event Name     | When                               | `event.detail` Shape           | Description                                                                                                                                       |
+| -------------- | ---------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `close`        | Cancel, successful save, or Finish | `{ recordId: String \| null }` | Signals the parent wrapper to close the modal/tab. `recordId` is the saved/updated record's ID, or `null` on cancel                               |
+| `notification` | Any toast message                  | `{ title, message, variant }`  | Bubbles a toast up through the Shadow DOM. Required for Lightning Out / VF page integration where `ShowToastEvent` doesn't reach the VF container |
 
-> Both `close` and `notification` fire with `bubbles: true, composed: true` so they cross Shadow DOM boundaries.
+> `notification` fires with `bubbles: true, composed: true` so it crosses Shadow DOM into a Visualforce / Lightning Out container. The core component's `close` event is a plain `CustomEvent` (no `bubbles` / `composed`) — it is consumed by the immediate wrapper via `onclose`, and it is the **wrapper** that re-dispatches a `bubbles: true, composed: true` `close` for the VF/Aura host.
 
 ---
 
@@ -663,22 +670,23 @@ These are thin wrappers. They exist to provide the correct default configuration
 
 ```html
 <c-dynamic-record-form
-    record-id={recordId}
-    object-api-name={objectApiName}
-    record-type-id={recordTypeId}
-    form-developer-name="Case_Intake"
-    form-mode="create"
-    is-lightning-out={isLightningOut}
-    onclose={handleClose}>
+  record-id="{recordId}"
+  object-api-name="{objectApiName}"
+  record-type-id="{recordTypeId}"
+  form-developer-name="Case_Intake"
+  form-mode="create"
+  is-lightning-out="{isLightningOut}"
+  onclose="{handleClose}"
+>
 </c-dynamic-record-form>
 ```
 
-| `@api` Property | Type | Notes |
-|---|---|---|
-| `recordId` | String | Context record ID (e.g., Account ID when creating from Account) |
-| `objectApiName` | String | Object of the context record |
-| `recordTypeId` | String | Passed through to dynamicRecordForm |
-| `isLightningOut` | Boolean | Set to `true` by the VF page |
+| `@api` Property  | Type    | Notes                                                           |
+| ---------------- | ------- | --------------------------------------------------------------- |
+| `recordId`       | String  | Context record ID (e.g., Account ID when creating from Account) |
+| `objectApiName`  | String  | Object of the context record                                    |
+| `recordTypeId`   | String  | Passed through to dynamicRecordForm                             |
+| `isLightningOut` | Boolean | Set to `true` by the VF page                                    |
 
 The `handleClose` method fires a `close` CustomEvent with `bubbles: true, composed: true` and also calls `NavigationMixin.Navigate` (for Lightning standard nav) and `CloseActionScreenEvent` (to close the Quick Action modal).
 
@@ -686,11 +694,12 @@ The `handleClose` method fires a `close` CustomEvent with `bubbles: true, compos
 
 ```html
 <c-dynamic-record-form
-    record-id={recordId}
-    object-api-name={objectApiName}
-    form-developer-name="Case_Intake"
-    form-mode="edit"
-    onclose={handleClose}>
+  record-id="{recordId}"
+  object-api-name="{objectApiName}"
+  form-developer-name="Case_Intake"
+  form-mode="edit"
+  onclose="{handleClose}"
+>
 </c-dynamic-record-form>
 ```
 
@@ -700,11 +709,12 @@ Close handler simply dispatches `CloseActionScreenEvent`.
 
 ```html
 <c-dynamic-record-form
-    record-id={recordId}
-    object-api-name={objectApiName}
-    form-developer-name="Task_Intake"
-    form-mode="create"
-    onclose={handleClose}>
+  record-id="{recordId}"
+  object-api-name="{objectApiName}"
+  form-developer-name="Task_Intake"
+  form-mode="create"
+  onclose="{handleClose}"
+>
 </c-dynamic-record-form>
 ```
 
@@ -712,11 +722,12 @@ Close handler simply dispatches `CloseActionScreenEvent`.
 
 ```html
 <c-dynamic-record-form
-    record-id={recordId}
-    object-api-name={objectApiName}
-    form-developer-name="Case_Quality_Score"
-    form-mode="edit"
-    onclose={handleClose}>
+  record-id="{recordId}"
+  object-api-name="{objectApiName}"
+  form-developer-name="Case_Quality_Score"
+  form-mode="edit"
+  onclose="{handleClose}"
+>
 </c-dynamic-record-form>
 ```
 
@@ -739,10 +750,10 @@ public static FormWrapper getFormMetadata(String formDeveloperName, String recor
 
 Fetches all configuration metadata for the form. Marked `cacheable=true` — results are stored in the Lightning Data Service cache. Metadata changes in production require a cache-busting deploy or a browser hard-refresh for users to see them immediately.
 
-| Parameter | Description |
-|---|---|
-| `formDeveloperName` | `DeveloperName` of the `Form_Config__mdt` record |
-| `recordTypeId` | Optional. If provided, enables Record Type-aware picklist filtering via `ConnectApi.RecordUi.getPicklistValuesByRecordType()` |
+| Parameter           | Description                                                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `formDeveloperName` | `DeveloperName` of the `Form_Config__mdt` record                                                                              |
+| `recordTypeId`      | Optional. If provided, enables Record Type-aware picklist filtering via `ConnectApi.RecordUi.getPicklistValuesByRecordType()` |
 
 **Returns:** `FormWrapper` containing the full form configuration with sections, fields, picklist options, and dependency maps.
 
@@ -764,6 +775,7 @@ public static Map<String, Object> getExistingRecordData(
 Dynamically builds and executes SOQL queries to fetch parent and child records for edit mode. The LWC generates the `queryConfigJson` automatically based on the form metadata — you do not need to call this manually.
 
 **Returns:** A `Map` with two keys:
+
 - `parent`: `Map<String, Object>` of the parent record's field values. Lookup fields include a `{FieldApiName}_Label` entry with the related record's display name
 - `children`: `Map<String, List<Map<String, Object>>>` keyed by child object API name
 
@@ -784,17 +796,19 @@ public static Map<String, Object> saveMultiObject(
 
 The transactional save engine. Performs all DML within a `Database.setSavepoint()` block.
 
-| Parameter | Description |
-|---|---|
-| `parentObjectApiName` | API name of the primary/parent object (e.g., `Case`) |
-| `payload` | Hierarchical map of `{ objectApiName: {fieldMap} }` or `{ objectApiName: [{fieldMap}, ...] }` |
-| `relationshipMap` | Map of `{ childObjectApiName: lookupFieldOnChild }` for linking children to the parent |
-| `recordsToDelete` | List of record IDs to hard-delete before saving (removed rows and disabled matrix cells) |
-| `saveWithoutSharing` | If `true`, uses the `SystemModeDML` inner class to bypass sharing rules |
+| Parameter             | Description                                                                                   |
+| --------------------- | --------------------------------------------------------------------------------------------- |
+| `parentObjectApiName` | API name of the primary/parent object (e.g., `Case`)                                          |
+| `payload`             | Hierarchical map of `{ objectApiName: {fieldMap} }` or `{ objectApiName: [{fieldMap}, ...] }` |
+| `relationshipMap`     | Map of `{ childObjectApiName: lookupFieldOnChild }` for linking children to the parent        |
+| `recordsToDelete`     | List of record IDs to hard-delete before saving (removed rows and disabled matrix cells)      |
+| `saveWithoutSharing`  | If `true`, uses the `SystemModeDML` inner class to bypass sharing rules                       |
 
 **Returns:** `Map` with:
+
 - `parentId`: The Salesforce ID of the upserted parent record
 - `childIds`: `Map<String, String>` of `{ childObjectApiName: childRecordId }` for single-record child saves
+- `allInsertedChildIds`: `List<String>` of every child/matrix ID upserted in this call — the LWC accumulates these into `_rollbackChildIds` for a possible `rollbackTransaction`
 
 **FLS enforcement:** Before setting any field value, the engine checks `f.getDescribe().isCreateable()` or `isUpdateable()`. Fields the user lacks permission for are silently skipped.
 
@@ -813,13 +827,15 @@ public static List<Map<String, String>> searchRecords(
 
 Powers the custom Lookup typeahead. Returns up to 10 matching records.
 
-| Parameter | Description |
-|---|---|
-| `searchTerm` | The text the user has typed |
-| `objectApiName` | Target object to search |
-| `searchFields` | Comma-separated field API names. All fields are searched with `LIKE '%searchTerm%'` using OR conditions. First field becomes the display label |
+| Parameter       | Description                                                                                                  |
+| --------------- | ------------------------------------------------------------------------------------------------------------ |
+| `searchTerm`    | The text the user has typed (the LWC calls this only at 3+ characters, debounced 300 ms)                     |
+| `objectApiName` | Target object to search                                                                                      |
+| `searchFields`  | Comma-separated field API names. First field becomes the display label; the rest populate `meta` / `details` |
 
-**Returns:** List of maps with keys: `id`, `label`, `meta` (second field value), `details` (all secondary fields formatted as `fieldName: value` lines)
+**Implementation (v2.1 — replaced the SOQL `LIKE '%term%'` full-table scan):** builds a SOSL query — `FIND '<escaped term>*' IN ALL FIELDS RETURNING <object>(Id, <fields> WHERE (<field> LIKE '%term%' OR …) [AND IsActive = true for User] LIMIT 10)` — and runs it with `Search.query()`. The `FIND` term is escaped for SOSL reserved characters by `escapeSoslReservedChars()`; the `WHERE` clause re-narrows the index matches to the configured fields. Uses the Salesforce search index, so it stays fast as data volume grows (the old scan was the cause of >20 s production lookups). Caveat: a just-created record is not searchable until the async indexer processes it.
+
+**Returns:** List of maps with keys: `id`, `label` (first field), `meta` (second field value), `details` (all fields after the first, formatted as `fieldName: value` lines)
 
 ---
 
@@ -834,7 +850,7 @@ public static LookupRecordDetails getRecordDetails(
 )
 ```
 
-Fetches the display label and details for a known record ID. Used to populate lookup field labels in edit mode.
+Fetches the display label and details for a known record ID. Used to populate lookup field labels in edit mode and after a Dynamic SOQL resolves a lookup ID. Self-healing: if `objectApiName` is blank/`"null"`/`"undefined"` it is derived from the ID; if `searchFields` is blank it defaults to `Name`; for `Case` (no `Name` field) it falls back to `CaseNumber`. On any query error it returns the raw ID as both `id` and `label` rather than throwing, so a stale ID can't crash the form.
 
 ---
 
@@ -874,10 +890,10 @@ Returns the first matching `SObject`, or `null` if no results. Errors are silent
 
 ```apex
 @AuraEnabled
-public static Id uploadFile(String parentId, String fileName, String base64Data)
+public static Id uploadFile(String parentId, String fileName, String base64Data, Boolean saveWithoutSharing)
 ```
 
-Creates a `ContentVersion` record linked to `parentId`. Used exclusively in the Lightning Out / Visualforce context (max 4MB per file enforced on the client).
+Creates a `ContentVersion` (`FirstPublishLocationId = parentId`), then re-queries it and returns the `ContentDocumentId`. Used in the Lightning Out / Visualforce context (max 4 MB per file, enforced on the client). When `saveWithoutSharing = true` the insert goes through the `SystemModeDML` inner class.
 
 ---
 
@@ -885,10 +901,21 @@ Creates a `ContentVersion` record linked to `parentId`. Used exclusively in the 
 
 ```apex
 @AuraEnabled
-public static void deleteRecord(String recordId)
+public static void deleteRecord(String recordId, Boolean saveWithoutSharing)
 ```
 
-Generic single-record delete. Used for: file removal, record rollback on cancel, and child record deletion.
+Generic single-record delete — resolves the `SObjectType` from the ID. Used for file (`ContentDocument`) removal. When `saveWithoutSharing = true`, routes through `SystemModeDML.doDelete`.
+
+---
+
+#### `rollbackTransaction`
+
+```apex
+@AuraEnabled
+public static void rollbackTransaction(String recordId, List<String> childIds, Boolean saveWithoutSharing)
+```
+
+Client-driven compensating delete for a partially committed save. Deletes the `childIds` first, then the parent `recordId`, each with `allOrNone = false` so an already-deleted record does not abort the rest. Never throws — failures are only `System.debug`-logged, so it cannot create an error loop. Called by the LWC's `handleSubmit` catch block (when the parent was inserted but a later phase failed) and by `handleCancel` (create mode, record already saved). Honors `saveWithoutSharing` via `SystemModeDML`.
 
 ---
 
@@ -927,18 +954,18 @@ Before touching metadata, answer these questions:
 
 Navigate to: **Setup → Custom Metadata Types → Form Config → Manage Records → New**
 
-| Field | What to Enter |
-|---|---|
-| Label | Human-readable name (e.g., `Maintenance Request`) |
-| Developer Name | Unique identifier with underscores (e.g., `Maintenance_Request`). This is what you pass to the LWC |
-| Active | ✅ Checked |
-| Object API Name | Your primary object (e.g., `Case`) |
-| Form Title | The text shown on the form card (e.g., `New Maintenance Request`) |
-| Form Icon | SLDS icon (e.g., `standard:case`). See [SLDS Icons](https://www.lightningdesignsystem.com/icons/) for options |
-| Display Mode | `Single Page` for most forms; `Wizard` for multi-step flows |
-| Form Instructions | Optional banner HTML (e.g., `<b>For maintenance requests only</b>`) |
-| Button Config JSON | Optional — leave blank to use defaults |
-| Save Without Sharing | Check if the form creates records that are immediately reassigned by Assignment Rules |
+| Field                | What to Enter                                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- |
+| Label                | Human-readable name (e.g., `Maintenance Request`)                                                             |
+| Developer Name       | Unique identifier with underscores (e.g., `Maintenance_Request`). This is what you pass to the LWC            |
+| Active               | ✅ Checked                                                                                                    |
+| Object API Name      | Your primary object (e.g., `Case`)                                                                            |
+| Form Title           | The text shown on the form card (e.g., `New Maintenance Request`)                                             |
+| Form Icon            | SLDS icon (e.g., `standard:case`). See [SLDS Icons](https://www.lightningdesignsystem.com/icons/) for options |
+| Display Mode         | `Single Page` for most forms; `Wizard` for multi-step flows                                                   |
+| Form Instructions    | Optional banner HTML (e.g., `<b>For maintenance requests only</b>`)                                           |
+| Button Config JSON   | Optional — leave blank to use defaults                                                                        |
+| Save Without Sharing | Check if the form creates records that are immediately reassigned by Assignment Rules                         |
 
 ---
 
@@ -950,29 +977,29 @@ Create one section record per logical grouping of fields.
 
 **Example: General Info section (parent object)**
 
-| Field | Value |
-|---|---|
-| Label | `General Info` |
-| Developer Name | `General_Info` |
-| Form Config | `Maintenance_Request` *(select your config)* |
-| Object API Name | `Case` |
-| Order | `1` |
-| Number of Columns | `2` |
-| Show On | `Both` |
-| Collapse by Default | Unchecked (open by default) |
+| Field               | Value                                        |
+| ------------------- | -------------------------------------------- |
+| Label               | `General Info`                               |
+| Developer Name      | `General_Info`                               |
+| Form Config         | `Maintenance_Request` _(select your config)_ |
+| Object API Name     | `Case`                                       |
+| Order               | `1`                                          |
+| Number of Columns   | `2`                                          |
+| Show On             | `Both`                                       |
+| Collapse by Default | Unchecked (open by default)                  |
 
 **Example: Work Parts section (child object)**
 
-| Field | Value |
-|---|---|
-| Label | `Work Parts` |
-| Developer Name | `Work_Parts` |
-| Form Config | `Maintenance_Request` |
-| Object API Name | `Work_Part__c` |
-| Relationship Parent Field | `Maintenance_Request__c` *(the lookup on Work_Part__c to Case)* |
-| Order | `2` |
-| Allow Multiple Rows | ✅ Checked |
-| Collapse by Default | ✅ Checked |
+| Field                     | Value                                                           |
+| ------------------------- | --------------------------------------------------------------- |
+| Label                     | `Work Parts`                                                    |
+| Developer Name            | `Work_Parts`                                                    |
+| Form Config               | `Maintenance_Request`                                           |
+| Object API Name           | `Work_Part__c`                                                  |
+| Relationship Parent Field | `Maintenance_Request__c` _(the lookup on Work_Part__c to Case)_ |
+| Order                     | `2`                                                             |
+| Allow Multiple Rows       | ✅ Checked                                                      |
+| Collapse by Default       | ✅ Checked                                                      |
 
 ---
 
@@ -984,47 +1011,47 @@ Create one record per field you want on the form.
 
 **Example: Subject field**
 
-| Field | Value |
-|---|---|
-| Label | `Subject` |
-| Developer Name | `Subject` |
-| Form Section | `General_Info` *(select your section)* |
-| Field API Name | `Subject` |
-| Field Type | `Text` |
-| Order | `1` |
-| Required | ✅ Checked |
-| Save To Database | ✅ Checked |
+| Field            | Value                                  |
+| ---------------- | -------------------------------------- |
+| Label            | `Subject`                              |
+| Developer Name   | `Subject`                              |
+| Form Section     | `General_Info` _(select your section)_ |
+| Field API Name   | `Subject`                              |
+| Field Type       | `Text`                                 |
+| Order            | `1`                                    |
+| Required         | ✅ Checked                             |
+| Save To Database | ✅ Checked                             |
 
 **Example: Account lookup with pre-population**
 
-| Field | Value |
-|---|---|
-| Label | `Account` |
-| Developer Name | `Account` |
-| Form Section | `General_Info` |
-| Field API Name | `AccountId` |
-| Field Type | `Lookup` |
-| Lookup Target Object | `Account` |
-| Lookup Search Field | `Name,AccountNumber` |
-| Prepopulate | ✅ Checked |
-| Key Prefix | `001` |
-| Order | `2` |
-| Required | ✅ Checked |
-| Save To Database | ✅ Checked |
+| Field                | Value                |
+| -------------------- | -------------------- |
+| Label                | `Account`            |
+| Developer Name       | `Account`            |
+| Form Section         | `General_Info`       |
+| Field API Name       | `AccountId`          |
+| Field Type           | `Lookup`             |
+| Lookup Target Object | `Account`            |
+| Lookup Search Field  | `Name,AccountNumber` |
+| Prepopulate          | ✅ Checked           |
+| Key Prefix           | `001`                |
+| Order                | `2`                  |
+| Required             | ✅ Checked           |
+| Save To Database     | ✅ Checked           |
 
 **Example: Priority picklist with default value**
 
-| Field | Value |
-|---|---|
-| Label | `Priority` |
-| Developer Name | `Case_Priority` |
-| Form Section | `General_Info` |
-| Field API Name | `Priority` |
-| Field Type | `Picklist` |
-| Default Value | `Medium` |
-| Order | `3` |
-| Required | ✅ Checked |
-| Save To Database | ✅ Checked |
+| Field            | Value           |
+| ---------------- | --------------- |
+| Label            | `Priority`      |
+| Developer Name   | `Case_Priority` |
+| Form Section     | `General_Info`  |
+| Field API Name   | `Priority`      |
+| Field Type       | `Picklist`      |
+| Default Value    | `Medium`        |
+| Order            | `3`             |
+| Required         | ✅ Checked      |
+| Save To Database | ✅ Checked      |
 
 ---
 
@@ -1035,6 +1062,7 @@ To show a field only when another field has a specific value, edit the field's *
 **Example: Show Description only when Is VIP is checked AND Subject is not empty**
 
 In `Form_Field__mdt.Description.Visibility_Logic__c`:
+
 ```json
 {
   "operator": "AND",
@@ -1073,16 +1101,16 @@ The framework manages all form state in a flat map called `sectionData`, keyed b
 ```javascript
 sectionData = {
   "uuid-for-row-1": {
-    "Subject":    "Fix cooling unit",
-    "Priority":   "High",
-    "AccountId":  "001XXXXXXXXXXXXX",
-    "Is_VIP__c":  true
+    Subject: "Fix cooling unit",
+    Priority: "High",
+    AccountId: "001XXXXXXXXXXXXX",
+    Is_VIP__c: true
   },
   "uuid-for-work-part-1": {
-    "Equipment__c": "01tXXXXXXXXXXXXXX",
-    "Quantity__c":  2
+    Equipment__c: "01tXXXXXXXXXXXXXX",
+    Quantity__c: 2
   }
-}
+};
 ```
 
 Each section row (including the single default row of non-repeating sections) gets a UUID. Child row UUIDs are tracked for deletion when a row is removed.
@@ -1097,15 +1125,17 @@ Every field change triggers this sequence:
 
 ```
 handleFieldChange()
-   ├─ Update sectionData[rowId][fieldApi] = newValue
+   ├─ Update sectionData[rowId][fieldApi] = newValue   (always synchronous)
    ├─ filterDependencies()     — update dependent picklist options
    ├─ calculateFormulas()      — recalculate all formula fields (background state only)
-   ├─ evaluateVisibility()     — sync UI values, apply show/hide, apply required
-   ├─ applyMatrixRules()       — apply readonlyLogic to matrix cells
+   ├─ applyMatrixRules()       — apply readonlyLogic to matrix cells, wipe locked cells
+   ├─ evaluateVisibility()     — sync UI values, apply show/hide, apply required (stabilization loop)
    └─ evaluateDynamicQueries() — fire Apex queries for Dynamic SOQL fields
 ```
 
-The cycle always ends in `evaluateVisibility()`, which is the single source of truth for pushing background state changes to the rendered UI. This design prevents infinite re-render loops.
+`applyMatrixRules()` runs **before** `evaluateVisibility()` — a matrix wipe changes `matrixState`, which visibility logic can read. The cycle ends in `evaluateVisibility()`, the single source of truth for pushing background state to the rendered UI. This ordering prevents infinite re-render loops.
+
+**Typing debounce (v2.1):** for `Text`, `Long Text Area`, `Number`, `Currency`, and `Percent` fields with no Dynamic SOQL dependency, `handleFieldChange()` writes `sectionData` immediately but defers `calculateFormulas → applyMatrixRules → evaluateVisibility` behind a **300 ms** timer, so keystroke-to-repaint stays snappy on forms with heavy logic. Picklists, lookups, checkboxes, multi-selects, and any SOQL-dependent field run the cycle synchronously and first flush any pending text-field timer (`flushAllFieldChangeTimers()`), so tabbing from a text field into a picklist never loses an update. `validateCurrentStep()` (submit / Next) reads `sectionData` and the DOM directly, so a pending debounce never affects a save.
 
 ---
 
@@ -1113,12 +1143,13 @@ The cycle always ends in `evaluateVisibility()`, which is the single source of t
 
 The framework uses two different upload mechanisms based on context:
 
-| Context | `isLightningOut` | Component Used | Max File Size |
-|---|---|---|---|
-| Quick Action / Lightning Page | `false` | `lightning-file-upload` | Standard Salesforce limit |
-| Visualforce / Lightning Out | `true` | `lightning-input type="file"` + base64 upload via Apex | **4 MB per file** (enforced client-side) |
+| Context                       | `isLightningOut` | Component Used                                         | Max File Size                            |
+| ----------------------------- | ---------------- | ------------------------------------------------------ | ---------------------------------------- |
+| Quick Action / Lightning Page | `false`          | `lightning-file-upload`                                | Standard Salesforce limit                |
+| Visualforce / Lightning Out   | `true`           | `lightning-input type="file"` + base64 upload via Apex | **4 MB per file** (enforced client-side) |
 
 For Lightning Out, after each file is selected, the framework:
+
 1. Reads the file using `FileReader.readAsDataURL()`
 2. Strips the base64 prefix
 3. Calls `DynamicFormController.uploadFile()` which creates a `ContentVersion` linked to the saved record
@@ -1142,6 +1173,7 @@ For Lightning Out, after each file is selected, the framework:
 If a section has `Custom_Component_Name__c` populated, the form renders a custom child LWC for that section instead of a standard field grid.
 
 **Contract:** Your custom component must implement:
+
 - Accept `@api recordId` for context
 - Accept `@api isLoading` to disable its UI during parent form saves
 - Expose `@api getCustomData()` — returns an object compatible with the framework's payload format
@@ -1180,6 +1212,7 @@ Quick Actions are the standard way to surface the form on a record page.
 5. Add the action to the object's **Page Layout** or directly to the **Lightning Page** via the Highlights Panel component's action configuration
 
 **Behaviour:**
+
 - The action opens as a modal overlay
 - `recordId` and `objectApiName` are automatically passed by Salesforce
 - On save or cancel, `CloseActionScreenEvent` closes the modal
@@ -1229,6 +1262,7 @@ caseCreatePage.page
 **Console App Event Handling (VF):**
 
 The VF page attaches listeners to the `lwcContainer` div that:
+
 - `notification` event → fires `sforce.one.showToast()`
 - `close` event → navigates to the new record and closes the tab using `sforce.console.closeTab()`
 
@@ -1246,6 +1280,7 @@ URL to open tab:
 The Aura component reads `c__recordId` and `c__recordTypeId` from the URL parameters and passes them to `caseCreateWrapper`.
 
 **Console tab close behaviour:**
+
 - Uses `lightning:workspaceAPI.getFocusedTabInfo()` then `closeTab()`
 - In a Standard (non-Console) app: the LWC handles navigation itself via `NavigationMixin` — the Aura component does nothing extra
 
@@ -1255,64 +1290,65 @@ The Aura component reads `c__recordId` and `c__recordTypeId` from the URL parame
 
 ### 11.1 Case Intake Form (`Case_Intake`)
 
-| Attribute | Value |
-|---|---|
-| Primary Object | `Case` |
-| Display Mode | Single Page |
-| Sections | General Info, Picklists, Date & Date Time, Case Comments (child), Work Parts (child), Upload Supporting Files, Country Service Mapping (Matrix), Other Details |
-| Record Types | Maintenance, Service |
+| Attribute        | Value                                                                                                                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Primary Object   | `Case`                                                                                                                                                                                                                                                                   |
+| Display Mode     | Single Page                                                                                                                                                                                                                                                              |
+| Sections         | General Info, Picklists, Date & Date Time, Case Comments (child), Work Parts (child), Upload Supporting Files, Country Service Mapping (Matrix), Other Details                                                                                                           |
+| Record Types     | Maintenance, Service                                                                                                                                                                                                                                                     |
 | Notable Features | Pre-population of Account, Contact, Parent Case; dependent picklists (Reason → Sub-Reason, Category → Sub-Category); Matrix section with per-cell readonly logic; conditional visibility on Description and Priority; CaseComment child records; Work Part child records |
 
 **Section order and visibility summary:**
 
-| # | Section | Object | Allow Multiple | Visible When |
-|---|---|---|---|---|
-| 1 | General Information | `Case` | No | Always |
-| 2 | Picklists | `Case` | No | Always |
-| 3 | Date & Date Time | `Case` | No | Collapsed by default |
-| 4 | Case Comments | `CaseComment` | Yes | Is_VIP__c=true AND Priority=High |
-| 5 | Work Parts | `Work_Part__c` | No | Collapsed by default |
-| 6 | Upload Supporting Files | `Case` | No | After save only |
-| 7 | Country Service Mapping | `Matrix_Data__c` | No (Matrix) | Is_VIP__c=true AND Priority=Medium |
-| 8 | Other Details | `Case` | No | Always |
+| #   | Section                 | Object           | Allow Multiple | Visible When                       |
+| --- | ----------------------- | ---------------- | -------------- | ---------------------------------- |
+| 1   | General Information     | `Case`           | No             | Always                             |
+| 2   | Picklists               | `Case`           | No             | Always                             |
+| 3   | Date & Date Time        | `Case`           | No             | Collapsed by default               |
+| 4   | Case Comments           | `CaseComment`    | Yes            | Is_VIP__c=true AND Priority=High   |
+| 5   | Work Parts              | `Work_Part__c`   | No             | Collapsed by default               |
+| 6   | Upload Supporting Files | `Case`           | No             | After save only                    |
+| 7   | Country Service Mapping | `Matrix_Data__c` | No (Matrix)    | Is_VIP__c=true AND Priority=Medium |
+| 8   | Other Details           | `Case`           | No             | Always                             |
 
 ---
 
 ### 11.2 Task Intake Form (`Task_Intake`)
 
-| Attribute | Value |
-|---|---|
-| Primary Object | `Task` |
-| Display Mode | Single Page |
-| Sections | Task Details |
+| Attribute        | Value                                                                                                                                                                      |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Primary Object   | `Task`                                                                                                                                                                     |
+| Display Mode     | Single Page                                                                                                                                                                |
+| Sections         | Task Details                                                                                                                                                               |
 | Notable Features | Pre-populates `WhatId` (Case lookup) from the Case context (`Key_Prefix__c = 500`); pre-populates `OwnerId` (User) from current user; Override Picklist Values for Subject |
 
 **Fields:**
 
-| Field | API Name | Notes |
-|---|---|---|
-| Subject | `Subject` | Picklist with overridden values: `Service Request, Breakdown, Maintenance` |
-| Status | `Status` | Required |
-| Owner | `OwnerId` | Pre-populated with current user |
-| Due Date | `ActivityDate` | Date field |
-| Priority | `Priority` | Optional |
-| Case | `WhatId` | Lookup to Case; pre-populated from context; read-only |
-| Comments | `Description` | Long Text Area |
+| Field    | API Name       | Notes                                                                      |
+| -------- | -------------- | -------------------------------------------------------------------------- |
+| Subject  | `Subject`      | Picklist with overridden values: `Service Request, Breakdown, Maintenance` |
+| Status   | `Status`       | Required                                                                   |
+| Owner    | `OwnerId`      | Pre-populated with current user                                            |
+| Due Date | `ActivityDate` | Date field                                                                 |
+| Priority | `Priority`     | Optional                                                                   |
+| Case     | `WhatId`       | Lookup to Case; pre-populated from context; read-only                      |
+| Comments | `Description`  | Long Text Area                                                             |
 
 ---
 
 ### 11.3 QC Score Form (`Case_Quality_Score`)
 
-| Attribute | Value |
-|---|---|
-| Primary Object | `Case` |
-| Form Mode | Edit only (`Show_On__c = Edit` on the section) |
-| Display Mode | Single Page |
+| Attribute        | Value                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------ |
+| Primary Object   | `Case`                                                                                     |
+| Form Mode        | Edit only (`Show_On__c = Edit` on the section)                                             |
+| Display Mode     | Single Page                                                                                |
 | Notable Features | Formula field (`Final_Audit_Grade__c`) auto-calculates Pass/Fail from numeric score inputs |
 
 **Formula example:**
 
 `Final_Audit_Grade__c` formula:
+
 ```
 ({Cleanliness_Score} + {Speed_Score}) / 2 > 80 ? 'Pass' : 'Fail'
 ```
@@ -1342,17 +1378,31 @@ By default, all Apex runs `with sharing`. If `Save_Without_Sharing__c = true` on
 ```apex
 @TestVisible
 private without sharing class SystemModeDML {
-    public void doUpsert(SObject record) { upsert record; }
-    public void doDelete(List<SObject> records) { Database.delete(records); }
+  public void doUpsert(SObject record) {
+    upsert record;
+  }
+  public void doUpsert(List<SObject> records) {
+    upsert records;
+  }
+  public void doDelete(List<SObject> records) {
+    Database.delete(records);
+  }
+  public void doDelete(List<SObject> records, Boolean allOrNone) {
+    Database.delete(records, allOrNone);
+  }
+  public void doInsert(SObject record) {
+    insert record;
+  }
 }
 ```
 
-This class is annotated `@TestVisible` to allow unit test coverage. The outer class remains `with sharing` — only the actual DML operations bypass sharing, not the queries.
+This class is annotated `@TestVisible` to allow unit test coverage. The outer class remains `with sharing` — only the actual DML operations bypass sharing, not the queries. When `Save_Without_Sharing__c = true`, `saveMultiObject`, `deleteRecord`, `rollbackTransaction`, and `uploadFile` all route their DML through this class.
 
-### SOQL Injection Prevention
+### SOQL / SOSL Injection Prevention
 
-- Standard queries: All dynamic SOQL uses `:recordId` bind variables and `String.escapeSingleQuotes()`
-- Dynamic SOQL fields: The LWC translates `'{FieldName}'` merge syntax to Apex bind variables (`:FieldName`) before sending to `executeDynamicQuery()`, which uses `Database.queryWithBinds()` — injection is architecturally impossible
+- Standard queries: dynamic SOQL uses `:recordId` bind variables and `String.escapeSingleQuotes()` on identifiers
+- Dynamic SOQL fields: the LWC translates `'{FieldName}'` merge syntax to Apex bind variables (`:FieldName`) before sending to `executeDynamicQuery()`, which uses `Database.queryWithBinds()` — injection is architecturally impossible
+- Lookup search (`searchRecords`): SOSL has no bind-variable form for the `FIND` term inside a dynamic query string, so the term is backslash-escaped for every SOSL metacharacter by `escapeSoslReservedChars()`; the `LIKE` filter value and all identifiers are passed through `String.escapeSingleQuotes()`
 
 ### Lightning Out Security
 
@@ -1364,24 +1414,25 @@ The Visualforce page (`caseCreatePage`) does not expose any additional attack su
 
 ### Caching Strategy
 
-| Method | Cached? | Notes |
-|---|---|---|
-| `getFormMetadata` | ✅ `cacheable=true` | Cached in Lightning Data Service. Near-instant on repeat loads |
-| `searchRecords` | ✅ `cacheable=true` | Typeahead results are cached per search term |
-| `getRecordDetails` | ✅ `cacheable=true` | Lookup label lookups are cached |
-| `getExistingRecordData` | ❌ | Must always be fresh |
-| `saveMultiObject` | ❌ | DML cannot be cached |
-| `executeDynamicQuery` | ❌ | Must always be fresh |
+| Method                  | Cached?             | Notes                                                          |
+| ----------------------- | ------------------- | -------------------------------------------------------------- |
+| `getFormMetadata`       | ✅ `cacheable=true` | Cached in Lightning Data Service. Near-instant on repeat loads |
+| `searchRecords`         | ✅ `cacheable=true` | Typeahead results are cached per search term                   |
+| `getRecordDetails`      | ✅ `cacheable=true` | Lookup label lookups are cached                                |
+| `getExistingRecordData` | ❌                  | Must always be fresh                                           |
+| `saveMultiObject`       | ❌                  | DML cannot be cached                                           |
+| `executeDynamicQuery`   | ❌                  | Must always be fresh                                           |
 
 ### Governor Limit Considerations
 
-| Scenario | Mitigation |
-|---|---|
-| Many child records in one save | `saveMultiObject` uses `upsert List<SObject>` — one DML statement per object type regardless of row count |
-| Many picklist fields on one form | `ConnectApi.RecordUi.getPicklistValuesByRecordType()` called once per form load; result covers all fields |
-| Lookup search on every keystroke | Search only fires when input length ≥ 2 characters; `_activeSearchTerms` tracking discards stale responses |
-| Dynamic SOQL on every field change | `_activeSoqlQueries` tracking ensures only the latest query result is applied; stale late responses are discarded |
-| Deep form with many sections | `@wire` metadata caching means the metadata fetch contributes 0 SOQL on repeat loads within the session |
+| Scenario                                    | Mitigation                                                                                                                                                                                                                                                                            |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Many child records in one save              | `saveMultiObject` uses `upsert List<SObject>` — one DML statement per object type regardless of row count                                                                                                                                                                             |
+| Many picklist fields on one form            | Schema describes are reused within a single `getFormMetadata` call. **Note:** when `recordTypeId` is passed, `ConnectApi.RecordUi.getPicklistValuesByRecordType()` is called once **per root-object picklist field**, not once per form — keep RT-filtered picklist counts reasonable |
+| Lookup search on every keystroke            | Search fires only at **3+ characters** and is **debounced 300 ms** (`_lookupSearchTimers`); `_activeLookup` + `_activeSearchTerms` discard stale/out-of-order responses. The SOSL rewrite keeps each call fast regardless of data volume                                              |
+| Typing in text fields on a logic-heavy form | The `calculateFormulas → applyMatrixRules → evaluateVisibility` cycle is **debounced 300 ms** for `Text` / `Long Text Area` / `Number` / `Currency` / `Percent` fields (no SOQL dependency), so it runs once per pause instead of once per keystroke                                  |
+| Dynamic SOQL on every field change          | `_activeSoqlQueries` tracking ensures only the latest query result is applied; stale late responses are discarded                                                                                                                                                                     |
+| Deep form with many sections                | `@wire` metadata caching means the metadata fetch contributes 0 SOQL on repeat loads within the session                                                                                                                                                                               |
 
 ### Large Matrix Grids
 
@@ -1391,16 +1442,18 @@ Matrix sections with many rows × many columns can generate a large number of `M
 
 ## 14. Known Limitations & Workarounds
 
-| Limitation | Detail | Workaround |
-|---|---|---|
-| Metadata cache on `getFormMetadata` | After changing `Form_Config__mdt`, `Form_Section__mdt`, or `Form_Field__mdt` records in production, users may see stale form configurations until the browser cache expires | Have users perform a hard browser refresh (Ctrl+Shift+R / Cmd+Shift+R) or use a new browser tab |
-| File upload max 4 MB in VF/Lightning Out | Enforced client-side in `handleCustomFileUpload()` | Use the standard Quick Action path (not VF) for large file requirements |
-| No native rich-text input support | `Field_Type__c` does not include a Rich Text editor | Configure as `Long Text Area` for plain text, or add a `lightning-input-rich-text` component by extending the framework (see [Section 9.4](#94-adding-a-new-field-type)) |
-| Picklist dependency `validFor` decoding | `PicklistDependencyHelper` uses base64 decoding of Salesforce's internal schema structure | Low risk — this pattern has been stable for many years. If Salesforce changes the internal encoding, the fallback is `Override_Dependency_JSON__c` |
-| Formula fields display as read-only text | Formula results that need to be displayed must use `Field_Type__c = Text` with `Read_Only__c = true` | This is the intended pattern; no workaround needed |
-| Matrix cell `readonlyLogic` supports single conditions only | No AND/OR nesting inside `readonlyLogic` at the cell level | Split complex logic across multiple conditions evaluated from a section-level `visibilityLogic`, or use a single `includes`/`excludes` operator against a multi-select picklist value |
-| ConnectAPI picklist method (Spring '26+) | `ConnectApi.RecordUi.getPicklistValuesByRecordType()` requires API version 66.0+. Orgs below this version will silently fall back to schema-based picklist values | Ensure `DynamicFormController.cls` uses API version 66.0 or higher |
-| File fields require save before upload | The file upload section is hidden until the record is created | This is by design — files need a parent record ID. Not a limitation for most workflows |
+| Limitation                                         | Detail                                                                                                                                                                             | Workaround                                                                                                                                                               |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Metadata cache on `getFormMetadata`                | After changing `Form_Config__mdt`, `Form_Section__mdt`, or `Form_Field__mdt` records in production, users may see stale form configurations until the browser cache expires        | Have users perform a hard browser refresh (Ctrl+Shift+R / Cmd+Shift+R) or use a new browser tab                                                                          |
+| File upload max 4 MB in VF/Lightning Out           | Enforced client-side in `handleCustomFileUpload()`                                                                                                                                 | Use the standard Quick Action path (not VF) for large file requirements                                                                                                  |
+| No native rich-text input support                  | `Field_Type__c` does not include a Rich Text editor                                                                                                                                | Configure as `Long Text Area` for plain text, or add a `lightning-input-rich-text` component by extending the framework (see [Section 9.4](#94-adding-a-new-field-type)) |
+| Picklist dependency `validFor` decoding            | `PicklistDependencyHelper` uses base64 decoding of Salesforce's internal schema structure                                                                                          | Low risk — this pattern has been stable for many years. If Salesforce changes the internal encoding, the fallback is `Override_Dependency_JSON__c`                       |
+| Formula fields display as read-only text           | Formula results that need to be displayed must use `Field_Type__c = Text` with `Read_Only__c = true`                                                                               | This is the intended pattern; no workaround needed                                                                                                                       |
+| Lookup search depends on the SOSL index            | `searchRecords` uses SOSL for speed, so a record created moments ago may not appear until the async search indexer processes it (usually seconds)                                  | Acceptable for intake forms; reopen the lookup after a moment, or paste the ID                                                                                           |
+| Text-field reactivity is deferred up to 300 ms     | Formula / visibility / matrix recomputation lags a keystroke on `Text` / `Number` / `Long Text Area` / `Currency` / `Percent` fields (unless they carry a Dynamic SOQL dependency) | By design — `sectionData` and validation stay current; only derived UI state is delayed, and non-text changes / submit flush it immediately                              |
+| `Currency` / `Percent` render as plain text inputs | No locale mask or numeric spinner; `mapType()` only special-cases `Number`/`Checkbox`/`Date`/`DateTime`                                                                            | Value is still cast to `Double` on save. Use `Help_Text__c` to indicate the expected format                                                                              |
+| ConnectAPI picklist method (Spring '26+)           | `ConnectApi.RecordUi.getPicklistValuesByRecordType()` requires API version 66.0+. Orgs below this version will silently fall back to schema-based picklist values                  | Ensure `DynamicFormController.cls` uses API version 66.0 or higher                                                                                                       |
+| File fields require save before upload             | The file upload section is hidden until the record is created                                                                                                                      | This is by design — files need a parent record ID. Not a limitation for most workflows                                                                                   |
 
 ---
 
@@ -1411,6 +1464,7 @@ Matrix sections with many rows × many columns can generate a large number of `M
 **Likely cause:** The `@wire` call to `getFormMetadata` failed silently.
 
 **Check:**
+
 1. Verify `Active__c = true` on the Form Config record
 2. Verify `formDeveloperName` passed to the component matches exactly the `DeveloperName` on the Form Config (case-sensitive)
 3. Check browser console for Apex errors
@@ -1421,6 +1475,7 @@ Matrix sections with many rows × many columns can generate a large number of `M
 ### Fields are not pre-populating
 
 **Check:**
+
 1. `Prepopulate__c = true` on the field
 2. `Key_Prefix__c` is set and matches the first 3 characters of the context record's ID
 3. `Lookup_Target_Object__c` is set correctly
@@ -1432,6 +1487,7 @@ Matrix sections with many rows × many columns can generate a large number of `M
 ### Dependent picklist is showing all values instead of filtered values
 
 **Check:**
+
 1. `Controller_Field__c` on the dependent field is set to the API name of the controlling field
 2. If using `Override_Dependency_JSON__c`: verify the JSON keys exactly match the controlling picklist values (case-sensitive)
 3. If using standard Salesforce dependencies: verify the dependency is set up correctly in the object's picklist configuration
@@ -1442,6 +1498,7 @@ Matrix sections with many rows × many columns can generate a large number of `M
 ### Child records are not being created
 
 **Check:**
+
 1. `Object_API_Name__c` on the Form Section is set to the **child** object (not the parent)
 2. `Relationship_Parent_Field__c` on the Form Section is the API name of the lookup/master-detail **on the child object**
 3. The child fields have `Save_To_Database__c = true`
@@ -1453,6 +1510,7 @@ Matrix sections with many rows × many columns can generate a large number of `M
 ### Visibility logic is not working
 
 **Check:**
+
 1. JSON syntax is valid — use a JSON validator
 2. For Checkbox fields: use boolean `true`/`false` (not string `"true"`/`"false"`)
 3. Field API name in `when` is the exact Salesforce API name (case-sensitive)
@@ -1464,6 +1522,7 @@ Matrix sections with many rows × many columns can generate a large number of `M
 ### Formula field is showing the wrong value
 
 **Check:**
+
 1. `Formula_Logic__c` uses `{FieldApiName}` syntax (curly braces, exact API name)
 2. The field has `Read_Only__c = true` (formula fields are auto-disabled, but this is best practice)
 3. Referenced fields are not empty — empty/non-numeric values are substituted with `0`
@@ -1474,11 +1533,24 @@ Matrix sections with many rows × many columns can generate a large number of `M
 ### Dynamic SOQL field is not populating
 
 **Check:**
+
 1. `{FieldApiName}` syntax is used for bind variables (with single quotes in SOQL: `WHERE Id = '{FieldApiName}'`)
 2. All referenced bind variable fields have non-empty values — the query is skipped if any dependency is empty
 3. The SOQL query returns a result — test it manually in Developer Console
 4. The query returns a field other than `Id` — the engine extracts the first non-Id field value
 5. Check `System.debug` logs in the Developer Console for `Dynamic Query Error:` messages
+
+---
+
+### Lookup search returns nothing (or misses a record you know exists)
+
+**Check:**
+
+1. You typed **3 or more characters** — the search does not fire below that, and it is debounced 300 ms after you stop typing
+2. `Lookup_Target_Object__c` and `Lookup_Search_Field__c` are set; the first field in `Lookup_Search_Field__c` must be queryable on the target object
+3. The record was created very recently — SOSL only returns records the async search indexer has already processed (usually a few seconds)
+4. For `User` lookups, inactive users are intentionally excluded
+5. The search term matches on one of the configured fields — SOSL finds the record via the index, then a `LIKE '%term%'` filter narrows results to `Lookup_Search_Field__c`
 
 ---
 
@@ -1491,6 +1563,7 @@ The `Active__c` flag on the Form Config record is unchecked. Enable it in Setup.
 ### Quick Action modal closes immediately without showing the form
 
 **Check:**
+
 1. The wrapper LWC is correctly specified in the Quick Action definition
 2. The `handleClose` method is not being called prematurely during initialization
 3. Check browser console for JS errors during component mount
@@ -1501,18 +1574,18 @@ The `Active__c` flag on the Form Config record is unchecked. Enable it in Setup.
 
 Use this table when evaluating whether to deploy this framework or Salesforce OmniStudio OmniScript for a given requirement.
 
-| Dimension | Dynamic LWC Framework | OmniStudio OmniScript |
-|---|---|---|
-| **Licensing** | Free — 100% native platform | Requires additional OmniStudio licensing |
-| **Configuration UX** | CMDT records + JSON (developer/admin) | Visual drag-and-drop canvas (admin-friendly) |
-| **Performance** | Fast — native LWC, minimal DOM, optimized reactive state | Moderate — large JSON configurations, heavier DOM |
-| **Multi-object save** | Native — parent + N child objects in one atomic transaction | Complex — requires Integration Procedures or nested Edit Blocks |
-| **Client-side reactivity** | Instant — no server round-trips for visibility/required changes | Server round-trips for some reactive behaviours |
-| **2D Matrix grids** | Built-in with per-cell logic | Not natively available |
-| **UI customization** | Full control — SLDS classes and CSS overrides per field | Rigid — custom styling requires overriding global templates |
-| **Maintenance overhead** | Single codebase — updating the engine updates all forms | Each OmniScript must be individually versioned and activated |
-| **Learning curve** | Moderate — requires understanding of JSON config schemas | Low for admins; high for complex scenarios |
-| **Version control** | Standard SFDX/Git — CMDT deploys like any metadata | Separate versioning system; can drift from source control |
+| Dimension                  | Dynamic LWC Framework                                           | OmniStudio OmniScript                                           |
+| -------------------------- | --------------------------------------------------------------- | --------------------------------------------------------------- |
+| **Licensing**              | Free — 100% native platform                                     | Requires additional OmniStudio licensing                        |
+| **Configuration UX**       | CMDT records + JSON (developer/admin)                           | Visual drag-and-drop canvas (admin-friendly)                    |
+| **Performance**            | Fast — native LWC, minimal DOM, optimized reactive state        | Moderate — large JSON configurations, heavier DOM               |
+| **Multi-object save**      | Native — parent + N child objects in one atomic transaction     | Complex — requires Integration Procedures or nested Edit Blocks |
+| **Client-side reactivity** | Instant — no server round-trips for visibility/required changes | Server round-trips for some reactive behaviours                 |
+| **2D Matrix grids**        | Built-in with per-cell logic                                    | Not natively available                                          |
+| **UI customization**       | Full control — SLDS classes and CSS overrides per field         | Rigid — custom styling requires overriding global templates     |
+| **Maintenance overhead**   | Single codebase — updating the engine updates all forms         | Each OmniScript must be individually versioned and activated    |
+| **Learning curve**         | Moderate — requires understanding of JSON config schemas        | Low for admins; high for complex scenarios                      |
+| **Version control**        | Standard SFDX/Git — CMDT deploys like any metadata              | Separate versioning system; can drift from source control       |
 
 **Recommendation:** Use this framework for complex, multi-object transactional forms with real-time reactivity requirements. Consider OmniStudio for simpler, admin-managed guided flows where visual configuration is a priority and multi-object transactionality is not required.
 
@@ -1525,18 +1598,22 @@ To distribute this framework to other Salesforce orgs or teams:
 ### Components to Include in the Package
 
 **Custom Metadata Types (schema only — not data):**
+
 - `Form_Config__mdt`
 - `Form_Section__mdt`
 - `Form_Field__mdt`
 
 **Custom Objects:**
+
 - `Matrix_Data__c` (junction object for matrix grids)
 
 **Apex Classes:**
+
 - `DynamicFormController` (and its test class)
 - `PicklistDependencyHelper` (and its test class)
 
 **LWC:**
+
 - `dynamicRecordForm` (core engine — required)
 - Wrapper components are org-specific and typically not packaged
 
@@ -1545,6 +1622,7 @@ To distribute this framework to other Salesforce orgs or teams:
 ### What Receiving Teams Configure
 
 After installing the package, adopting teams:
+
 1. Create their own `Form_Config__mdt`, `Form_Section__mdt`, and `Form_Field__mdt` records in their org
 2. Build wrapper LWC components pointing at their form `DeveloperName` values
 3. Deploy wrapper components as Quick Actions or on Lightning Pages
@@ -1564,4 +1642,4 @@ This allows receiving teams to instantly see a working example and understand th
 
 ---
 
-*Documentation generated from production codebase. For issues or enhancements, raise a request with the Salesforce Architecture team.*
+_Documentation generated from production codebase. For issues or enhancements, raise a request with the Salesforce Architecture team._
